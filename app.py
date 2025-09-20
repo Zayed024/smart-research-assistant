@@ -1,14 +1,58 @@
 import os
 import sqlite3
 import threading
-from flask import Flask, request, jsonify, render_template,session
+import json
+from flask import Flask, request, jsonify, render_template
 from werkzeug.utils import secure_filename
 import pathway as pw
 from rag_pipeline import RagPipeline
-import uuid
+from PyPDF2 import PdfReader
 from pathway.io.python import ConnectorObserver
+from datetime import datetime
 
-# --- Configuration (No changes here) ---
+class PathwayObserver(ConnectorObserver):
+    def __init__(self, holder, batch_size=5, flush_interval=3):
+        self.holder = holder
+        self.batch_size = batch_size
+        self.flush_interval = flush_interval
+        self.buffer = []
+        self.last_flush_time = datetime.now()
+
+    def on_change(self, key, row, time, is_addition):
+        if is_addition:
+            self.buffer.append(row)
+            if len(self.buffer) >= self.batch_size:
+                self.flush()
+
+    def on_time_end(self, time):
+        if (datetime.now() - self.last_flush_time).total_seconds() >= self.flush_interval:
+            self.flush()
+
+    def flush(self):
+        if self.buffer:
+            print(f"Processing {len(self.buffer)} documents from Pathway live stream...")
+            self.holder.update_data(self.buffer)
+            self.buffer.clear()
+            self.last_flush_time = pw.now()
+
+    def on_end(self):
+        self.flush()
+        print("Stream ended.")
+
+def decode_file(data_bytes, file_path:str):
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == ".pdf":
+        try:
+            from io import BytesIO
+            pdf_reader = PdfReader(BytesIO(data_bytes))
+            return "\n".join(page.extract_text() or "" for page in pdf_reader.pages)
+        except Exception as e:
+            print(f"[PDF ERROR] Could not parse {file_path}: {e}")
+            return ""
+    else:
+        return data_bytes.decode("utf-8", errors="ignore")
+
+# --- Configuration ---
 UPLOAD_FOLDER = 'uploaded_files'
 LIVE_DATA_FOLDER = 'live_data_source'
 DATABASE = 'research_assistant.db'
@@ -17,12 +61,11 @@ ALLOWED_EXTENSIONS = {'txt', 'pdf'}
 app = Flask(__name__, template_folder='.')
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['LIVE_DATA_FOLDER'] = LIVE_DATA_FOLDER
-app.secret_key = os.urandom(24)
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 os.makedirs(LIVE_DATA_FOLDER, exist_ok=True)
 
-# --- Database Setup (No changes here) ---
+# --- Database ---
 def get_db_connection():
     conn = sqlite3.connect(DATABASE)
     conn.row_factory = sqlite3.Row
@@ -37,22 +80,24 @@ def init_db():
     conn.commit()
     conn.close()
 
+# --- Pathway Live Data Ingestion ---
+class PathwayResultHolder:
+    def __init__(self):
+        self.data = []
+        self.lock = threading.Lock()
 
+    def update_data(self, new_data):
+        with self.lock:
+            self.data = new_data
+            rag_pipeline.add_new_pathway_documents(self.data)
 
-class SimplePathwayObserver(ConnectorObserver):
-    def __init__(self, pipeline):
-        self.pipeline = pipeline
-
-    def on_change(self, key, row, time, is_addition):
-        # This method is called by Pathway for each new document.
-        if is_addition:
-            print(f"Received document from Pathway: {row['metadata']}")
-            # We pass the data as a list containing the single new row (document).
-            self.pipeline.add_new_pathway_documents([row])
-
+pathway_results = PathwayResultHolder()
 
 def run_pathway_pipeline():
-    
+    class InputSchema(pw.Schema):
+        doc: str
+        metadata: str
+
     rd = pw.io.fs.read(
         app.config['LIVE_DATA_FOLDER'],
         format="binary",
@@ -61,21 +106,17 @@ def run_pathway_pipeline():
     )
 
     decoded_rd = rd.select(
-        doc=pw.apply(lambda b: b.decode("utf-8", errors="ignore"), pw.this.data),
+        doc=pw.apply(lambda b, p: decode_file(b, str(p)), pw.this.data, pw.this._metadata["path"]),
         metadata=pw.this._metadata["path"]
     )
 
-    
-    observer = SimplePathwayObserver(rag_pipeline)
-
-    # Pass the observer OBJECT to the write function
+    observer = PathwayObserver(pathway_results, batch_size=2, flush_interval=5)
     pw.io.python.write(decoded_rd, observer)
 
     print("Starting Pathway pipeline...")
     pw.run(monitoring_level=pw.MonitoringLevel.NONE)
 
-
-
+# --- RAG Pipeline Initialization ---
 rag_pipeline = RagPipeline()
 
 # --- Flask API Routes ---
@@ -84,7 +125,6 @@ def allowed_file(filename):
 
 @app.route('/')
 def index():
-    session.clear()
     return render_template('index.html')
 
 @app.route('/api/upload', methods=['POST'])
@@ -92,42 +132,48 @@ def upload_file():
     if 'file' not in request.files:
         return jsonify({"error": "No file part"}), 400
     file = request.files['file']
-    if file.filename == '':
-        return jsonify({"error": "No selected file"}), 400
-    if file and allowed_file(file.filename):
-        filename = secure_filename(file.filename)
-        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
-        file.save(filepath)
-        
-        # Process and add the file to our RAG knowledge base
-        rag_pipeline.add_document(filepath)
-        
-        return jsonify({"success": f"File '{filename}' uploaded and processed."}), 200
-    return jsonify({"error": "File type not allowed"}), 400
+    if file.filename == '' or not allowed_file(file.filename):
+        return jsonify({"error": "Invalid or no selected file"}), 400
+
+    filename = secure_filename(file.filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    file.save(filepath)
+
+    rag_pipeline.add_document(filepath)
+
+    return jsonify({"success": f"File '{filename}' uploaded and processed."}), 200
+
+@app.route('/api/live_analyze', methods=['POST'])
+def live_analyze():
+    data = request.get_json()
+    draft_content = data.get('draft_content', '')
+
+    if not draft_content.strip():
+        return jsonify({"success": True, "analysis": {
+            "potential_citations": [], "related_papers": [], "validation_feedback": []
+        }})
+
+    result = rag_pipeline.analyze_draft(draft_content)
+    return jsonify(result)
 
 @app.route('/api/ask', methods=['POST'])
 def ask_question():
     data = request.get_json()
     if not data or 'question' not in data:
         return jsonify({"error": "Question not provided"}), 400
-    
+
     question = data['question']
-      # Get or create a session ID for the conversation
-    if 'session_id' not in session:
-        session['session_id'] = str(uuid.uuid4())
-    session_id = session['session_id']
+    draft_context = data.get('draft_context', '')
 
-    report = rag_pipeline.generate_report(question, session_id=session_id)
+    report = rag_pipeline.generate_report(question, draft_context)
 
-    report['session_id'] = session_id
-    # Update usage stats
     conn = get_db_connection()
     conn.execute("UPDATE usage_stats SET questions_asked = questions_asked + 1 WHERE id = 1")
     if report.get("success"):
          conn.execute("UPDATE usage_stats SET reports_generated = reports_generated + 1 WHERE id = 1")
     conn.commit()
     conn.close()
-    
+
     return jsonify(report)
 
 @app.route('/api/stats', methods=['GET'])
@@ -135,22 +181,11 @@ def get_stats():
     conn = get_db_connection()
     stats = conn.execute("SELECT * FROM usage_stats WHERE id = 1").fetchone()
     conn.close()
-    if stats:
-        return jsonify(dict(stats))
-    return jsonify({"questions_asked": 0, "reports_generated": 0})
+    return jsonify(dict(stats)) if stats else jsonify({"questions_asked": 0, "reports_generated": 0})
 
 # --- Main Execution ---
 if __name__ == '__main__':
-    # Initialize the database
     init_db()
-
-    # Start the Pathway pipeline in a separate thread
     pathway_thread = threading.Thread(target=run_pathway_pipeline, daemon=True)
     pathway_thread.start()
-    
-    # Add a dummy file to the live folder to show the pipeline is working
-    with open(os.path.join(LIVE_DATA_FOLDER, 'initial_news.txt'), 'w') as f:
-        f.write("This is a sample live news update from Pathway. The stock market is showing volatile trends today.")
-
-    # Start the Flask app
-    app.run(debug=True, use_reloader=False) # use_reloader=False is important for threading
+    app.run(debug=True, use_reloader=False)
