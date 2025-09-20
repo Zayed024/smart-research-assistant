@@ -113,14 +113,21 @@ Format instructions: {format_instructions}
             doc_content = item.get('doc', '')
             metadata = {'source': item.get('metadata', 'live_stream')}
             docs_to_add.append(Document(page_content=doc_content, metadata=metadata))
-        
+
         if docs_to_add:
             chunks = self.text_splitter.split_documents(docs_to_add)
             if chunks:
                 self.vector_store.add_documents(chunks)
                 print(f"Added {len(chunks)} chunks from Pathway to the knowledge base.")
 
-    def _get_session_history(self, session_id: str) -> BaseChatMessageHistory:
+    def _get_session_history(self, config) -> BaseChatMessageHistory:
+        # Extract session_id from config, with fallback logic
+        if isinstance(config, dict):
+            session_id = (config.get("configurable") or {}).get("session_id", "default")
+        else:
+            # Handle case where config is not a dict (e.g., passed as string)
+            session_id = "default"
+
         if session_id not in self._session_store:
             self._session_store[session_id] = ChatMessageHistory()
         return self._session_store[session_id]
@@ -131,47 +138,102 @@ Format instructions: {format_instructions}
         Generates a report using RAG with conversational memory.
         - session_id controls which chat history to use/append to.
         """
+
         print(f"Generating report for question: '{question}'")
         try:
-            # 1. Retrieve relevant documents 
+            # 1. Retrieve relevant documents
             retriever = self.vector_store.as_retriever(search_kwargs={"k": 4})
             retrieved_docs = retriever.invoke(question)
             if not retrieved_docs:
-                # Even if no docs, we still want history stored; we’ll continue the chain with empty context.
                 context = ""
                 sources = []
             else:
                 context = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
                 sources = list(set([doc.metadata.get('source', 'Unknown') for doc in retrieved_docs]))
 
-            # 2) Build per-call chain (prompt -> LLM -> JSON parser), then wrap with history
+            # 2) Build per-call chain, then wrap with history
             base_chain = self.prompt_template | self.llm | self.json_parser
 
             chain_with_history = RunnableWithMessageHistory(
                 base_chain,
-                get_session_history=lambda config: self._get_session_history(
-                    (config.get("configurable") or {}).get("session_id", "default")
-                ),
-                # The user's latest input key in our prompt variables:
+                get_session_history=self._get_session_history,
                 input_messages_key="question",
-                # Which prompt placeholder to stuff the history into:
                 history_messages_key="history"
-               
-            )
-           
-                # 3) Invoke with memory-aware config
-            report_json = chain_with_history.invoke(
-                {"context": context, "question": question},
-                config={"configurable": {"session_id": session_id}},
             )
 
-            return {
-                "success": True,
-                "summary": report_json.get("summary", "No summary generated."),
-                "takeaways": report_json.get("takeaways", []),
-                "sources": sources,
-            }
+            # 3) Invoke with memory-aware config - FIXED: Pass config as keyword argument
+            report_json = chain_with_history.invoke(
+                {"context": context, "question": question},
+                config={"configurable": {"session_id": session_id}}
+            )
+
+            # --- START OF DEBUG BLOCK ---
+            print("--- DEBUG INFO ---")
+            print(f"DEBUG: Type of report_json is {type(report_json)}")
+            print(f"DEBUG: Value is {report_json}")
+            print("--- END OF DEBUG BLOCK ---")
+            # --- END OF DEBUG BLOCK ---
+
+            # 4) Handle the response - add robust error handling for JSON parsing
+            if isinstance(report_json, dict):
+                # Normal case: report_json is already a dictionary
+                return {
+                    "success": True,
+                    "summary": report_json.get("summary", "No summary generated."),
+                    "takeaways": report_json.get("takeaways", []),
+                    "sources": sources,
+                }
+            elif isinstance(report_json, str):
+                # Handle case where JsonOutputParser returns a string instead of dict
+                print(f"WARNING: JsonOutputParser returned a string instead of dict. Attempting to parse as JSON.")
+                try:
+                    import json
+                    parsed_json = json.loads(report_json)
+                    if isinstance(parsed_json, dict):
+                        return {
+                            "success": True,
+                            "summary": parsed_json.get("summary", "No summary generated."),
+                            "takeaways": parsed_json.get("takeaways", []),
+                            "sources": sources,
+                        }
+                    else:
+                        print(f"ERROR: Parsed JSON is not a dictionary: {type(parsed_json)}")
+                        return {
+                            "success": False,
+                            "error": "Invalid response format from AI model.",
+                            "summary": "Unable to generate summary due to response format issue.",
+                            "takeaways": [],
+                            "sources": sources,
+                        }
+                except json.JSONDecodeError as json_error:
+                    print(f"ERROR: Failed to parse JSON string: {json_error}")
+                    print(f"Raw string content: {report_json[:500]}...")  # Log first 500 chars
+                    return {
+                        "success": False,
+                        "error": "Failed to parse AI model response as JSON.",
+                        "summary": "Unable to generate summary due to parsing error.",
+                        "takeaways": [],
+                        "sources": sources,
+                    }
+            else:
+                # Handle unexpected type
+                print(f"ERROR: Unexpected type returned from JsonOutputParser: {type(report_json)}")
+                return {
+                    "success": False,
+                    "error": f"Unexpected response type: {type(report_json)}",
+                    "summary": "Unable to generate summary due to unexpected response type.",
+                    "takeaways": [],
+                    "sources": sources,
+                }
 
         except Exception as e:
             print(f"Error during report generation: {e}")
-            return {"error": "Failed to generate report."}
+            import traceback
+            print(f"Full traceback: {traceback.format_exc()}")
+            return {
+                "success": False,
+                "error": f"Failed to generate report: {str(e)}",
+                "summary": "Unable to generate summary due to an error.",
+                "takeaways": [],
+                "sources": [],
+            }
