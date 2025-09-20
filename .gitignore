@@ -1,2 +1,5 @@
 /venv/
 .env
+/uploaded_files/
+/live_data_source/
+__pycache__/
