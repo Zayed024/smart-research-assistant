@@ -1,18 +1,15 @@
 # rag_pipeline.py
 import os
+import getpass
+import json
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import PyPDFLoader, TextLoader
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
-
-import getpass
-
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.output_parsers import JsonOutputParser
-from langchain_core.runnables import RunnableWithMessageHistory
-from langchain_community.chat_message_histories import ChatMessageHistory
-from langchain_core.chat_history import BaseChatMessageHistory
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain.schema import Document
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,75 +17,34 @@ load_dotenv()
 if "GEMINI_API_KEY" not in os.environ:
     os.environ["GEMINI_API_KEY"] = getpass.getpass("Enter your Google AI API key: ")
 
-# LANGSMITH_API_KEY=os.environ["LANGSMITH_API_KEY"]
-# os.environ["LANGSMITH_TRACING"] = "true"
-
-
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash",
-    temperature=0,
+    model="gemini-2.5-flash", 
+    temperature=0.1,
     max_tokens=None,
     timeout=None,
     max_retries=2,
-    # other params...
 )
-
 
 class RagPipeline:
     def __init__(self):
-        # Initialize components
         self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
         self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         self.vector_store = None
-        self.documents = []
-        self.llm = llm
         self._initialize_vector_store()
 
-
-         # --- Memory store (session_id -> ChatMessageHistory) ---
-        self._session_store: dict[str, BaseChatMessageHistory] = {}
-
-        # --- Parsers and prompt parts reused across calls ---
-        self.json_parser = JsonOutputParser()
-
-        # We include a MessagesPlaceholder so chat history is injected automatically.
-        self.system_message = """
-You are a smart research assistant. Your task is to answer a user's question based ONLY on the provided context.
-Analyze the context and generate a report in a JSON format. The JSON object must contain two keys:
-1. "summary": A concise, well-structured summary of the answer.
-2. "takeaways": A JSON array of 3 to 4 key bullet points or takeaways from the summary.
-
-Follow these rules strictly:
-- Base your entire response on the provided context. Do not use outside information.
-- If the context does not contain the answer, return a JSON object with an empty summary and an empty takeaways array.
-- Your final output MUST be a valid JSON object and nothing else.
-
-Format instructions: {format_instructions}
-""".strip()
-
-        # The prompt includes prior turns via {history}, then current context + question.
-        self.prompt_template = ChatPromptTemplate.from_messages([
-            ("system", self.system_message),
-            MessagesPlaceholder(variable_name="history"),
-            ("human", "Context:\n{context}\n---\nQuestion: {question}"),
-        ]).partial(format_instructions=self.json_parser.get_format_instructions())
-
-
     def _initialize_vector_store(self):
-        # Create an empty vector store if it doesn't exist
-        placeholder_text = ["Initialize with some text"]
+        placeholder_text = ["Initialize with some text to create the vector store"]
         self.vector_store = FAISS.from_texts(placeholder_text, self.embeddings)
 
     def _load_documents(self, filepath):
         _, extension = os.path.splitext(filepath)
         if extension.lower() == '.pdf':
             loader = PyPDFLoader(filepath)
-        else: # Default to text loader
+        else:
             loader = TextLoader(filepath, encoding='utf-8')
         return loader.load()
 
     def add_document(self, filepath):
-        """Loads and processes a single file, adding it to the vector store."""
         print(f"Processing document: {filepath}")
         try:
             new_docs = self._load_documents(filepath)
@@ -96,20 +52,13 @@ Format instructions: {format_instructions}
             if chunks:
                 self.vector_store.add_documents(chunks)
                 print(f"Added {len(chunks)} chunks from {filepath} to the knowledge base.")
-            else:
-                print(f"Warning: No text chunks extracted from {filepath}.")
         except Exception as e:
             print(f"Error processing document {filepath}: {e}")
 
     def add_new_pathway_documents(self, pathway_data):
-        """Adds documents coming from the Pathway live stream."""
         print(f"Processing {len(pathway_data)} documents from Pathway live stream...")
         docs_to_add = []
         for item in pathway_data:
-            # Create LangChain Document objects from Pathway's output
-            from langchain.schema import Document
-            # Assuming item is a dictionary-like object from Pathway
-            # with 'doc' and 'metadata' fields
             doc_content = item.get('doc', '')
             metadata = {'source': item.get('metadata', 'live_stream')}
             docs_to_add.append(Document(page_content=doc_content, metadata=metadata))
@@ -120,58 +69,136 @@ Format instructions: {format_instructions}
                 self.vector_store.add_documents(chunks)
                 print(f"Added {len(chunks)} chunks from Pathway to the knowledge base.")
 
-    def _get_session_history(self, session_id: str) -> BaseChatMessageHistory:
-        if session_id not in self._session_store:
-            self._session_store[session_id] = ChatMessageHistory()
-        return self._session_store[session_id]
+    def analyze_draft(self, draft_content):
+        print(f"Analyzing draft content...")
+        try:
+            retriever = self.vector_store.as_retriever(search_kwargs={"k": 5})
+            retrieved_docs = retriever.invoke(draft_content)
 
+            if not retrieved_docs:
+                return {"success": True, "analysis": {"potential_citations": [], "unsupported_claims": [], "related_papers": [], "validation_feedback": []}}
 
-    def generate_report(self, question: str, session_id: str = "default"):
-        """
-        Generates a report using RAG with conversational memory.
-        - session_id controls which chat history to use/append to.
-        """
+            context = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
+            
+            system_message = """
+            You are an expert academic research assistant. Your task is to analyze an author's draft text based *only* on a provided context of source documents. Your goal is to help them improve their paper by suggesting citations, identifying related work, and validating their claims against the sources.
+
+            Follow these rules strictly:
+            1.  Base all your output *exclusively* on the provided 'Context Documents'. Do not use outside knowledge.
+            2.  Your entire response must be a single, valid JSON object. Do not add any text before or after the JSON.
+            3.  If the context is insufficient to perform a task, return an empty list `[]` for that key.
+            """
+
+            human_template = """
+            Here is the information for your analysis:
+
+            **Context Documents:**
+            {context}
+
+            ---
+
+            **Author's Draft Text:**
+            {draft}
+
+            ---
+
+            **Your Task:**
+            Analyze the "Author's Draft Text" using *only* the "Context Documents". Generate a JSON object with the following keys:
+
+            1.  "potential_citations": An array of objects. For each claim in the draft that is directly supported by the context, create an object with:
+                - "claim_in_draft": The exact sentence from the author's draft.
+                - "supporting_quote_from_context": The specific quote from the context that supports the claim.
+                - "source": The source document of the quote (e.g., the filename).
+
+            2.  "unsupported_claims": An array of strings. Identify factual claims or statements in the draft that *cannot* be verified or supported by the provided "Context Documents". List the exact sentences from the draft. This helps the author identify where they might need additional citations.
+
+            3.  "related_papers": An array of strings. Suggest up to 3 source documents from the context that are highly relevant to the draft's main topic. List their source names.
+
+            4.  "validation_feedback": An array of objects. Check for inconsistencies or contradictions between the draft and the context. For each finding, create an object with:
+                - "draft_statement": The statement from the draft being checked.
+                - "feedback": Your analysis (e.g., "This statement appears to contradict the context, which states '...'").
+                - "source": The relevant source from the context.
+                If there are no inconsistencies, return an empty array.
+
+            JSON Output:
+            """
+
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_message),
+                ("human", human_template),
+            ])
+
+            chain = prompt | self.llm | StrOutputParser()
+
+            json_string_output = chain.invoke({
+                "context": context,
+                "draft": draft_content
+            })
+
+            try:
+                analysis_result = json.loads(json_string_output)
+                analysis_result.setdefault('potential_citations', [])
+                analysis_result.setdefault('unsupported_claims', [])
+                analysis_result.setdefault('related_papers', [])
+                analysis_result.setdefault('validation_feedback', [])
+                return {"success": True, "analysis": analysis_result}
+            except json.JSONDecodeError:
+                print("Error: LLM did not return valid JSON.")
+                return {"error": "Failed to parse analysis from AI.", "raw_output": json_string_output}
+
+        except Exception as e:
+            print(f"Error during draft analysis: {e}")
+            return {"error": "An internal error occurred during analysis."}
+
+    def generate_report(self, question, draft_context=""):
         print(f"Generating report for question: '{question}'")
         try:
-            # 1. Retrieve relevant documents 
+            combined_query = question
+            if draft_context:
+                combined_query += "\n\nRelevant context from the user's current work:\n" + draft_context
+
             retriever = self.vector_store.as_retriever(search_kwargs={"k": 4})
-            retrieved_docs = retriever.invoke(question)
+            retrieved_docs = retriever.invoke(combined_query)
+
+            context = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
+            sources = list(set([doc.metadata.get('source', 'Unknown') for doc in retrieved_docs]))
+
             if not retrieved_docs:
-                # Even if no docs, we still want history stored; we’ll continue the chain with empty context.
-                context = ""
-                sources = []
-            else:
-                context = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
-                sources = list(set([doc.metadata.get('source', 'Unknown') for doc in retrieved_docs]))
+                 return {"summary": "Could not find relevant information in the uploaded documents to answer the question.", "sources": []}
 
-            # 2) Build per-call chain (prompt -> LLM -> JSON parser), then wrap with history
-            base_chain = self.prompt_template | self.llm | self.json_parser
-
-            chain_with_history = RunnableWithMessageHistory(
-                base_chain,
-                get_session_history=lambda config: self._get_session_history(
-                    (config.get("configurable") or {}).get("session_id", "default")
-                ),
-                # The user's latest input key in our prompt variables:
-                input_messages_key="question",
-                # Which prompt placeholder to stuff the history into:
-                history_messages_key="history"
-               
-            )
-           
-                # 3) Invoke with memory-aware config
-            report_json = chain_with_history.invoke(
-                {"context": context, "question": question},
-                config={"configurable": {"session_id": session_id}},
-            )
-
-            return {
-                "success": True,
-                "summary": report_json.get("summary", "No summary generated."),
-                "takeaways": report_json.get("takeaways", []),
-                "sources": sources,
-            }
-
+            system_message = """
+            You are a smart research assistant. Your task is to answer a user's question based on two sources of information:
+            1. A provided context of source documents.
+            2. The user's own draft paper text.
+            Answer concisely and base your answer *only* on the provided information. If the answer isn't in the context, say so.
+            """
+            
+            human_message = """
+            Context Documents:
+            {context}
+            ---
+            User's Draft Paper:
+            {draft_context}
+            ---
+            Question: {question}
+            """
+            
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_message),
+                ("human", human_message)
+            ])
+            
+            output_parser = StrOutputParser()
+            chain = prompt | self.llm | output_parser
+            
+            summary = chain.invoke({
+                "context": context,
+                "draft_context": draft_context,
+                "question": question
+            })
+            
+            return {"success": True, "summary": summary, "sources": sources}
         except Exception as e:
             print(f"Error during report generation: {e}")
             return {"error": "Failed to generate report."}
+
