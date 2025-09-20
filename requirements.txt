@@ -1,0 +1,10 @@
+flask
+werkzeug
+pathway
+langchain
+langchain-community
+sentence-transformers
+faiss-cpu
+pypdf
+langchain-huggingface
+PyPDF2
