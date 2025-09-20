@@ -8,9 +8,13 @@ from langchain_huggingface import HuggingFaceEmbeddings
 import getpass
 
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import StrOutputParser
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.output_parsers import JsonOutputParser
+from langchain_core.runnables import RunnableWithMessageHistory
+from langchain_community.chat_message_histories import ChatMessageHistory
+from langchain_core.chat_history import BaseChatMessageHistory
 from dotenv import load_dotenv
+
 load_dotenv()
 
 if "GEMINI_API_KEY" not in os.environ:
@@ -39,6 +43,36 @@ class RagPipeline:
         self.documents = []
         self.llm = llm
         self._initialize_vector_store()
+
+
+         # --- Memory store (session_id -> ChatMessageHistory) ---
+        self._session_store: dict[str, BaseChatMessageHistory] = {}
+
+        # --- Parsers and prompt parts reused across calls ---
+        self.json_parser = JsonOutputParser()
+
+        # We include a MessagesPlaceholder so chat history is injected automatically.
+        self.system_message = """
+You are a smart research assistant. Your task is to answer a user's question based ONLY on the provided context.
+Analyze the context and generate a report in a JSON format. The JSON object must contain two keys:
+1. "summary": A concise, well-structured summary of the answer.
+2. "takeaways": A JSON array of 3 to 4 key bullet points or takeaways from the summary.
+
+Follow these rules strictly:
+- Base your entire response on the provided context. Do not use outside information.
+- If the context does not contain the answer, return a JSON object with an empty summary and an empty takeaways array.
+- Your final output MUST be a valid JSON object and nothing else.
+
+Format instructions: {format_instructions}
+""".strip()
+
+        # The prompt includes prior turns via {history}, then current context + question.
+        self.prompt_template = ChatPromptTemplate.from_messages([
+            ("system", self.system_message),
+            MessagesPlaceholder(variable_name="history"),
+            ("human", "Context:\n{context}\n---\nQuestion: {question}"),
+        ]).partial(format_instructions=self.json_parser.get_format_instructions())
+
 
     def _initialize_vector_store(self):
         # Create an empty vector store if it doesn't exist
@@ -86,68 +120,58 @@ class RagPipeline:
                 self.vector_store.add_documents(chunks)
                 print(f"Added {len(chunks)} chunks from Pathway to the knowledge base.")
 
+    def _get_session_history(self, session_id: str) -> BaseChatMessageHistory:
+        if session_id not in self._session_store:
+            self._session_store[session_id] = ChatMessageHistory()
+        return self._session_store[session_id]
 
-    def generate_report(self, question):
-        """Generates a report by retrieving context, building a prompt, and calling the LLM chain."""
+
+    def generate_report(self, question: str, session_id: str = "default"):
+        """
+        Generates a report using RAG with conversational memory.
+        - session_id controls which chat history to use/append to.
+        """
         print(f"Generating report for question: '{question}'")
         try:
-            # 1. Retrieve relevant documents (same as before)
-            retriever = self.vector_store.as_retriever(search_kwargs={"k": 4}) # Increased to 4 for more context
+            # 1. Retrieve relevant documents 
+            retriever = self.vector_store.as_retriever(search_kwargs={"k": 4})
             retrieved_docs = retriever.invoke(question)
-
             if not retrieved_docs:
-                return {"summary": "Could not find relevant information in the uploaded documents to answer the question.", "sources": []}
-            
-            context = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
-            sources = list(set([doc.metadata.get('source', 'Unknown') for doc in retrieved_docs]))
-            
-            # 2. Build the Prompt and Chain
-            
-            system_message = """
-            You are a smart research assistant. Your task is to answer a user's question based *only* on the provided context.
-            
-            Follow these rules strictly:
-            1.  Synthesize the information from the context into a concise, structured report.
-            2.  Do not use any information outside of the provided context.
-            3.  If the context does not contain the answer, you must state that you cannot answer the question with the given information.
-            4.  Do not make up facts or speculate.
-            """
-            
-            # The human message template formats the inputs for the LLM.
-            human_message = """
-            Context:
-            {context}
-            ---
-            Question: {question}
-            """
-            
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", system_message),
-                ("human", human_message)
-            ])
-            
-            # The output parser cleans up the LLM's response into a simple string.
-            output_parser = StrOutputParser()
-            
-            # The chain connects the prompt, the LLM, and the output parser.
-            chain = prompt | self.llm | output_parser
-            
-            # 3. Invoke the chain with the context and question
-            summary = chain.invoke({
-                "context": context,
-                "question": question
-            })
-            
-            # 4. Return the result (same as before)
+                # Even if no docs, we still want history stored; we’ll continue the chain with empty context.
+                context = ""
+                sources = []
+            else:
+                context = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
+                sources = list(set([doc.metadata.get('source', 'Unknown') for doc in retrieved_docs]))
+
+            # 2) Build per-call chain (prompt -> LLM -> JSON parser), then wrap with history
+            base_chain = self.prompt_template | self.llm | self.json_parser
+
+            chain_with_history = RunnableWithMessageHistory(
+                base_chain,
+                get_session_history=lambda config: self._get_session_history(
+                    (config.get("configurable") or {}).get("session_id", "default")
+                ),
+                # The user's latest input key in our prompt variables:
+                input_messages_key="question",
+                # Which prompt placeholder to stuff the history into:
+                history_messages_key="history"
+               
+            )
+           
+                # 3) Invoke with memory-aware config
+            report_json = chain_with_history.invoke(
+                {"context": context, "question": question},
+                config={"configurable": {"session_id": session_id}},
+            )
+
             return {
                 "success": True,
-                "summary": summary,
-                "takeaways": [ # In a real app, you might ask the LLM to generate these too!
-                    "This is a key takeaway generated by the AI.",
-                    "The system identified critical patterns in the data.",
-                ],
-                "sources": sources
+                "summary": report_json.get("summary", "No summary generated."),
+                "takeaways": report_json.get("takeaways", []),
+                "sources": sources,
             }
+
         except Exception as e:
             print(f"Error during report generation: {e}")
             return {"error": "Failed to generate report."}
