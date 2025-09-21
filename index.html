@@ -5,272 +5,373 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Research Co-Pilot</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Include Quill.js from CDN -->
+    
+    <!-- Quill.js & KaTeX (for LaTeX) -->
     <link href="https://cdn.quilljs.com/1.3.6/quill.snow.css" rel="stylesheet">
     <script src="https://cdn.quilljs.com/1.3.6/quill.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.13.18/dist/katex.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.13.18/dist/katex.min.js"></script>
+
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { font-family: 'Inter', sans-serif; }
-        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
+        body { 
+            font-family: 'Inter', sans-serif;
+            overflow-x: hidden;
+            background-color: #111827; /* bg-gray-900 */
+        }
+        .loader { border: 4px solid #f3f3f3; border-top: 4px solid #4f46e5; border-radius: 50%; width: 24px; height: 24px; animation: spin 1s linear infinite; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        
         /* Quill Editor Styling */
-        #editor { height: 60vh; background-color: #1f2937; color: white; border-radius: 0.5rem; font-size: 16px; }
+        #editor-container { height: 100vh; display: flex; flex-direction: column; padding: 2rem 1rem; transition: padding-left 0.3s ease-in-out, padding-right 0.3s ease-in-out; }
+        #editor { flex-grow: 1; background-color: #1f2937; color: white; border-radius: 0 0 0.5rem 0.5rem; font-size: 16px; }
         .ql-toolbar { background-color: #374151; border-top-left-radius: 0.5rem; border-top-right-radius: 0.5rem; border: 1px solid #4b5563 !important;}
-        .ql-container { border-bottom-left-radius: 0.5rem; border-bottom-right-radius: 0.5rem; border: 1px solid #4b5563 !important;}
-        .ql-snow .ql-stroke { stroke: #d1d5db; }
-        .ql-snow .ql-picker-label { color: #d1d5db; }
+        .ql-container { height: calc(100% - 42px); border-bottom-left-radius: 0.5rem; border-bottom-right-radius: 0.5rem; border: 1px solid #4b5563 !important;}
+        .ql-snow .ql-stroke, .ql-snow .ql-picker-label { stroke: #d1d5db; color: #d1d5db; }
+        .ql-snow .ql-picker-options { background-color: #374151; border-color: #4b5563; }
+
+        /* Custom Toolbar Buttons */
+        .ql-toolbar .ql-custom-button .ql-stroke-mitter { display: none; }
+        .ql-toolbar .ql-custom-button:after { font-size: 12px; font-weight: 500; padding: 0 4px; }
+        .ql-toolbar .ql-ai-feedback:after { content: "AI Feedback"; }
+        .ql-toolbar .ql-check-citations:after { content: "Review Citations"; }
+        .ql-toolbar .ql-custom-button.new-feedback-available { background: #4f46e5; color: white !important; border-radius: 4px; animation: pulse 2s infinite; }
+        .ql-toolbar .ql-custom-button.new-feedback-available:after { color: white; }
+        @keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); } 70% { box-shadow: 0 0 0 8px rgba(99, 102, 241, 0); } 100% { box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); } }
+        
+        /* Citation Highlight in Editor */
+        .citation-highlight { background-color: rgba(79, 70, 229, 0.3); transition: background-color 0.3s; }
+        .citation-highlight-active { background-color: rgba(99, 102, 241, 0.6); }
+
+        /* Sidebar, Modals, etc. */
+        .sidebar { position: fixed; top: 0; height: 100vh; width: 380px; max-width: 90vw; z-index: 50; transition: transform 0.3s ease-in-out; box-shadow: 0 0 20px rgba(0,0,0,0.3); }
+        #controls-panel { left: 0; transform: translateX(-100%); } #controls-panel.open { transform: translateX(0); }
+        #feedback-panel { right: 0; transform: translateX(100%); } #feedback-panel.open { transform: translateX(0); }
+        body.controls-open #editor-container { padding-left: 400px; }
+        body.feedback-open #editor-container { padding-right: 400px; }
+        
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 100; display: flex; align-items: center; justify-content: center; opacity: 0; pointer-events: none; transition: opacity 0.3s ease; }
+        .modal-overlay:not(.hidden) { opacity: 1; pointer-events: auto; }
+        .modal-content { background: #1f2937; padding: 2rem; border-radius: 1rem; width: 90vw; max-width: 400px; transform: scale(0.95); transition: transform 0.3s ease; }
+        .modal-overlay:not(.hidden) .modal-content { transform: scale(1); }
+
+        .requires-login { opacity: 0.5; cursor: not-allowed; position: relative; }
+        .requires-login::after { content: 'Login Required'; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(0,0,0,0.7); color: white; padding: 0.5rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500; pointer-events: none; z-index: 10; }
+        .requires-login > * { pointer-events: none; }
+        
+        /* Chatbot styling */
+        #chatbot-window { transform-origin: bottom right; transition: transform 0.3s ease-in-out, opacity 0.3s ease-in-out; }
+        #chatbot-window.open { transform: scale(1); opacity: 1; pointer-events: auto; }
+        #chatbot-prompt { transition: opacity 0.3s ease-in-out; }
+        #chatbot-prompt.active { opacity: 1; }
+
+        /* Citation Autocomplete Styling */
+        #citation-popup { position: absolute; z-index: 1000; background-color: #2d3748; border: 1px solid #4a5568; border-radius: 0.5rem; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); width: 400px; max-height: 300px; overflow-y: auto; }
     </style>
 </head>
 <body class="bg-gray-900 text-white">
 
-    <div class="container mx-auto p-4 md:p-8">
-        <header class="text-center mb-8">
-            <h1 class="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
-                AI Research Co-Pilot
-            </h1>
-            <p class="text-gray-400 mt-2">Your live agent for writing, citation, and validation.</p>
-        </header>
+    <!-- Controls Toggle Button -->
+    <button id="toggle-controls-btn" class="fixed top-4 left-4 z-50 p-2 bg-gray-700/50 hover:bg-gray-600 rounded-full transition-all" title="Toggle Controls">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16" /></svg>
+    </button>
 
-        <main class="grid grid-cols-1 md:grid-cols-3 gap-8">
-            <!-- Left Column: Controls & Chatbot -->
-            <div class="md:col-span-1 bg-gray-800 p-6 rounded-2xl shadow-lg flex flex-col space-y-6">
-                <h2 class="text-2xl font-semibold border-b border-gray-700 pb-2">Controls</h2>
-                <!-- File Upload -->
-                <div>
-                    <h3 class="text-lg font-medium text-gray-300 mb-2">1. Upload Knowledge Base</h3>
-                    <form id="upload-form" class="bg-gray-700 p-4 rounded-lg">
-                        <input type="file" id="file-input" title="file-input" class="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-500 file:text-white hover:file:bg-blue-600" multiple>
-                        <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg mt-3 transition duration-300">
-                            Upload & Process
-                        </button>
-                    </form>
-                    <div id="upload-status" class="mt-2 text-sm"></div>
-                </div>
+    <!-- Left Sidebar: Controls -->
+    <aside id="controls-panel" class="sidebar bg-gray-800 p-6 flex flex-col">
+        <div class="flex justify-between items-center mb-4"><h2 class="text-2xl font-semibold">Controls</h2><button id="close-controls-btn" class="p-1 rounded-full hover:bg-gray-700 text-2xl">&times;</button></div>
+        
+        <div id="auth-container" class="border-y border-gray-700 py-4"></div>
 
-                <!-- Chatbot / Q&A -->
-                <div>
-                    <h3 class="text-lg font-medium text-gray-300 mb-2">2. Ask About Your Research</h3>
-                    <form id="question-form">
-                        <textarea id="question-input" rows="3" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Ask a question about the source documents OR your draft..."></textarea>
-                        <button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg mt-3 transition duration-300">
-                            Ask AI
-                        </button>
-                    </form>
-                    <div id="chatbot-output" class="mt-4 p-4 bg-gray-700/50 rounded-lg max-h-96 overflow-y-auto hidden"></div>
-                </div>
-                 <!-- Usage Stats -->
-                 <div class="mt-auto">
-                    <h3 class="text-lg font-medium text-gray-300 mb-2">Usage Dashboard</h3>
-                    <div class="flex justify-around bg-gray-700 p-3 rounded-lg">
-                        <div class="text-center">
-                            <p class="text-2xl font-bold text-blue-400" id="questions-counter">0</p>
-                            <p class="text-sm text-gray-400">Questions</p>
-                        </div>
-                        <div class="text-center">
-                            <p class="text-2xl font-bold text-purple-400" id="reports-counter">0</p>
-                            <p class="text-sm text-gray-400">Reports</p>
-                        </div>
-                    </div>
-                </div>
+        <div class="space-y-6 mt-4 flex-grow overflow-y-auto pr-2">
+            <div class="border-b border-gray-700 pb-4">
+                <h3 class="text-lg font-medium text-gray-300">1. Upload Knowledge Base</h3>
+                <form id="upload-form" class="bg-gray-700 p-4 rounded-lg mt-2">
+                    <input type="file" id="file-input" class="block w-full text-sm text-gray-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-600 file:text-white hover:file:bg-blue-700" multiple>
+                    <button type="submit" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg mt-3 transition duration-300">Upload & Process</button>
+                    <div id="upload-status" class="mt-2 text-sm h-5"></div>
+                </form>
+            </div>
+            
+            <div id="learn-section-wrapper" class="border-b border-gray-700 pb-4">
+                <h3 class="text-lg font-medium text-gray-300">2. Learn About Concepts</h3>
+                <form id="learn-form" class="bg-gray-700 p-4 rounded-lg mt-2">
+                    <input type="text" id="learn-input" class="w-full bg-gray-600 text-white p-2 rounded-lg border border-gray-500" placeholder="Enter a topic to find papers...">
+                    <button type="submit" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg mt-3">Search My Docs</button>
+                </form>
+                <div id="learn-results" class="mt-2 text-sm max-h-48 overflow-y-auto p-2 space-y-2"></div>
             </div>
 
-            <!-- Right Column: Editor & Live Analysis -->
-            <div class="md:col-span-2 grid grid-cols-1 lg:grid-cols-2 gap-6">
-                <!-- Editor -->
-                <div class="bg-gray-800 p-6 rounded-2xl shadow-lg">
-                    <h2 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2">Your Research Paper</h2>
-                    <div id="editor"></div>
-                </div>
-                <!-- Live Analysis Panel -->
-                <div class="bg-gray-800 p-6 rounded-2xl shadow-lg">
-                    <h2 class="text-2xl font-semibold mb-4 border-b border-gray-700 pb-2 flex items-center gap-3">
-                        Live AI Feedback <div id="analysis-loader" class="loader hidden"></div>
-                    </h2>
-                    <div id="live-analysis-panel" class="space-y-4 overflow-y-auto max-h-[65vh] pr-2">
-                        <p id="analysis-placeholder" class="text-gray-500">Start writing in the editor to get live feedback...</p>
-                    </div>
-                </div>
+            <div id="library-section-wrapper">
+                <h3 class="text-lg font-medium text-gray-300">3. My Library</h3>
+                <div id="library-container" class="bg-gray-700 p-4 rounded-lg mt-2 min-h-[120px] max-h-60 overflow-y-auto space-y-2"></div>
             </div>
-        </main>
+        </div>
+        
+        <div class="mt-auto pt-4 border-t border-gray-700">
+            <h3 class="text-lg font-medium text-gray-300 mb-2">Usage Dashboard</h3>
+            <div class="flex justify-around bg-gray-700 p-3 rounded-lg">
+                <div class="text-center"><p class="text-2xl font-bold text-blue-400" id="questions-counter">0</p><p class="text-sm text-gray-400">Questions</p></div>
+                <div class="text-center"><p class="text-2xl font-bold text-purple-400" id="reports-counter">0</p><p class="text-sm text-gray-400">Reports</p></div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Main Content: Editor -->
+    <main id="editor-container">
+        <header class="text-center mb-6"><h1 class="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">AI Research Co-Pilot</h1></header>
+        <div id="editor"></div>
+        <div id="citation-popup" class="hidden"></div>
+    </main>
+    
+    <!-- Right Sidebar: Live Feedback -->
+    <aside id="feedback-panel" class="sidebar bg-gray-800 p-6">
+        <div class="flex justify-between items-center border-b border-gray-700 pb-2 mb-4">
+            <h2 id="feedback-panel-title" class="text-2xl font-semibold flex items-center gap-3">Live AI Feedback</h2>
+            <div id="analysis-loader" class="loader hidden"></div>
+            <button id="close-feedback-btn" class="p-1 rounded-full hover:bg-gray-700 text-2xl">&times;</button>
+        </div>
+        <div id="live-analysis-panel" class="space-y-4 pr-2"><p id="analysis-placeholder" class="text-gray-500">Start writing to get feedback.</p></div>
+    </aside>
+
+    <!-- Chatbot FAB and Popup Window -->
+    <div id="chatbot-container" class="fixed bottom-6 right-6 z-50">
+        <div id="chatbot-prompt" class="absolute bottom-16 right-0 bg-purple-600 text-white text-sm py-2 px-4 rounded-lg shadow-lg whitespace-nowrap opacity-0 transition-opacity duration-300 pointer-events-none">Ask about your new edits!</div>
+        <button id="chatbot-fab" class="bg-purple-600 hover:bg-purple-700 text-white w-16 h-16 rounded-full shadow-lg flex items-center justify-center transition-transform hover:scale-110"><svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.874 8.874 0 01-4.444-1.225L2 17.5V13.25A9.01 9.01 0 011.06 10c0-4.418 4.477-8 10-8s7 3.582 7 8zm-2.5 0a.5.5 0 00-.5-.5h-2.5a.5.5 0 000 1h2.5a.5.5 0 00.5-.5zM12 10a.5.5 0 00-.5-.5H7a.5.5 0 000 1h4.5a.5.5 0 00.5-.5z" clip-rule="evenodd" /></svg></button>
+        <div id="chatbot-window" class="absolute bottom-20 right-0 w-96 max-w-[90vw] h-[32rem] bg-gray-800 rounded-2xl shadow-2xl flex flex-col transform scale-95 opacity-0 pointer-events-none">
+            <div class="flex justify-between items-center p-4 bg-gray-700 rounded-t-2xl"><h3 class="text-lg font-semibold">Ask Your Co-Pilot</h3><button id="close-chatbot-btn" class="p-1 rounded-full hover:bg-gray-600 text-2xl">&times;</button></div>
+            <div id="chatbot-output" class="flex-grow p-4 overflow-y-auto"><p class="text-gray-400 text-sm">Ask a question about your documents or draft...</p></div>
+            <form id="question-form" class="p-4 border-t border-gray-700"><textarea id="question-input" rows="2" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Ask a question..."></textarea><button type="submit" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg mt-2 transition duration-300">Send</button></form>
+        </div>
     </div>
 
+    <!-- Authentication Modal -->
+    <div id="auth-modal" class="modal-overlay hidden">
+        <div class="modal-content relative">
+            <button id="close-auth-modal-btn" class="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl">&times;</button>
+            <div id="auth-modal-body"></div>
+        </div>
+    </div>
+    
     <script>
-        // --- DEBOUNCE UTILITY ---
-        function debounce(func, delay) {
-            let timeout;
-            return function(...args) {
-                clearTimeout(timeout);
-                timeout = setTimeout(() => func.apply(this, args), delay);
-            };
-        }
-        
-        // --- DOM ELEMENTS ---
-        const uploadForm = document.getElementById('upload-form');
-        const fileInput = document.getElementById('file-input');
-        const uploadStatus = document.getElementById('upload-status');
-        const questionForm = document.getElementById('question-form');
-        const questionInput = document.getElementById('question-input');
-        const chatbotOutput = document.getElementById('chatbot-output');
-        const analysisLoader = document.getElementById('analysis-loader');
-        const liveAnalysisPanel = document.getElementById('live-analysis-panel');
-        const analysisPlaceholder = document.getElementById('analysis-placeholder');
-        const questionsCounter = document.getElementById('questions-counter');
-        const reportsCounter = document.getElementById('reports-counter');
+        window.katex = katex;
+        // --- GLOBAL STATE ---
+        let authState = { logged_in: false, username: null };
+        let latestAnalysisResult = null;
+        let serpApiKey = null;
+        let currentCitationQuery = { range: null, query: '' };
 
-        // --- QUILL EDITOR SETUP ---
-        const quill = new Quill('#editor', {
-            theme: 'snow',
-            placeholder: 'Start writing your research paper here...',
-        });
-
-        // --- API & LOGIC ---
-        const analyzeDraft = async () => {
-            const draftContent = quill.getText();
-            if (draftContent.trim().length < 50) { 
-                liveAnalysisPanel.innerHTML = '<p id="analysis-placeholder" class="text-gray-500">Keep writing to get feedback (at least 50 characters)...</p>';
-                return;
-            }
-
-            analysisLoader.classList.remove('hidden');
-            if (document.getElementById('analysis-placeholder')) {
-                document.getElementById('analysis-placeholder').classList.add('hidden');
-            }
-
-            try {
-                const response = await fetch('/api/live_analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ draft_content: draftContent }),
-                });
-                const result = await response.json();
-                if (result.success) {
-                    displayLiveAnalysis(result.analysis);
-                } else {
-                    displayAnalysisError(result.error || "Failed to get analysis.");
-                }
-            } catch (error) {
-                displayAnalysisError("An error occurred during analysis.");
-            } finally {
-                analysisLoader.classList.add('hidden');
-            }
+        // --- DOM ELEMENT REFERENCES ---
+        const dom = {
+            controlsPanel: document.getElementById('controls-panel'),
+            toggleControlsBtn: document.getElementById('toggle-controls-btn'),
+            closeControlsBtn: document.getElementById('close-controls-btn'),
+            uploadForm: document.getElementById('upload-form'),
+            fileInput: document.getElementById('file-input'),
+            uploadStatus: document.getElementById('upload-status'),
+            learnForm: document.getElementById('learn-form'),
+            learnInput: document.getElementById('learn-input'),
+            learnResults: document.getElementById('learn-results'),
+            libraryContainer: document.getElementById('library-container'),
+            questionsCounter: document.getElementById('questions-counter'),
+            reportsCounter: document.getElementById('reports-counter'),
+            feedbackPanel: document.getElementById('feedback-panel'),
+            closeFeedbackBtn: document.getElementById('close-feedback-btn'),
+            liveAnalysisPanel: document.getElementById('live-analysis-panel'),
+            feedbackPanelTitle: document.getElementById('feedback-panel-title'),
+            analysisLoader: document.getElementById('analysis-loader'),
+            chatbotFab: document.getElementById('chatbot-fab'),
+            chatbotWindow: document.getElementById('chatbot-window'),
+            closeChatbotBtn: document.getElementById('close-chatbot-btn'),
+            chatbotPrompt: document.getElementById('chatbot-prompt'),
+            chatbotOutput: document.getElementById('chatbot-output'),
+            questionForm: document.getElementById('question-form'),
+            citationPopup: document.getElementById('citation-popup'),
+        };
+        const domAuth = {
+            container: document.getElementById('auth-container'),
+            modal: document.getElementById('auth-modal'),
+            modalBody: document.getElementById('auth-modal-body'),
+            closeModalBtn: document.getElementById('close-auth-modal-btn'),
+            learnWrapper: document.getElementById('learn-section-wrapper'),
+            libraryWrapper: document.getElementById('library-section-wrapper'),
         };
 
-        uploadForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const files = fileInput.files;
-            if (files.length === 0) {
-                showStatus('Please select one or more files.', 'error');
+        // --- QUILL EDITOR SETUP ---
+        const Inline = Quill.import('blots/inline');
+        class CitationHighlight extends Inline {}
+        CitationHighlight.blotName = 'citation-highlight';
+        CitationHighlight.className = 'citation-highlight';
+        Quill.register(CitationHighlight);
+
+        const toolbarOptions = [
+            [{ 'header': [1, 2, 3, 4, false] }, { 'font': [] }],
+            ['bold', 'italic', 'underline', 'strike'],
+            [{ 'align': [] }, { 'list': 'ordered'}, { 'list': 'bullet' }],
+            [{ 'color': [] }, { 'background': [] }],
+            ['link', 'blockquote', 'code-block', 'formula'],
+            ['clean'],
+            ['ai-feedback', 'check-citations']
+        ];
+        
+        const quill = new Quill('#editor', {
+            modules: {
+                toolbar: {
+                    container: toolbarOptions,
+                    handlers: {
+                        'ai-feedback': () => showGeneralFeedback(),
+                        'check-citations': () => reviewCitations()
+                    }
+                }
+            },
+            theme: 'snow',
+            placeholder: 'Start writing your research paper here...'
+        });
+
+        // --- UTILITY FUNCTIONS ---
+        function debounce(func, delay) { let timeout; return function(...args) { clearTimeout(timeout); timeout = setTimeout(() => func.apply(this, args), delay); }; }
+        function showStatus(message, type = 'info', duration = 3000) { 
+            dom.uploadStatus.textContent = message; 
+            const colors = { success: 'text-green-400', error: 'text-red-400', loading: 'text-blue-400' }; 
+            dom.uploadStatus.className = `mt-2 text-sm h-5 ${colors[type] || 'text-gray-400'}`;
+            if (type !== 'loading') {
+                setTimeout(() => { dom.uploadStatus.textContent = ''; }, duration);
+            }
+        }
+
+        // --- AUTHENTICATION & UI LOGIC ---
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/api/auth/status');
+                authState = await response.json();
+            } catch (e) {
+                console.error("Auth check failed", e);
+                authState = { logged_in: false, username: null };
+            } finally {
+                updateUIAfterAuthChange();
+            }
+        }
+
+        function updateUIAfterAuthChange() {
+            if (authState.logged_in) {
+                domAuth.container.innerHTML = `<div class="text-center"><p class="text-green-400">Welcome, <strong>${authState.username}</strong></p><button id="logout-btn" class="w-full bg-red-600 hover:bg-red-700 text-white py-2 px-4 rounded-lg mt-2 transition-all">Logout</button></div>`;
+                domAuth.learnWrapper.classList.remove('requires-login');
+                domAuth.libraryWrapper.classList.remove('requires-login');
+                fetchLibrary();
+            } else {
+                domAuth.container.innerHTML = `<div class="text-center"><p class="text-gray-400">Login to create your personal research library.</p><button id="show-login-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white py-2 px-4 rounded-lg mt-2 transition-all">Login or Register</button></div>`;
+                domAuth.learnWrapper.classList.add('requires-login');
+                domAuth.libraryWrapper.classList.add('requires-login');
+                dom.libraryContainer.innerHTML = '<p class="text-gray-500 text-sm text-center">Login to see your saved papers.</p>';
+            }
+        }
+
+        function showAuthModal(isLogin = true) {
+            const formTitle = isLogin ? 'Login' : 'Create Account';
+            const switchText = isLogin ? "Don't have an account? Register" : "Already have an account? Login";
+            const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+            domAuth.modalBody.innerHTML = `<h2 class="text-2xl font-bold mb-6 text-center text-white">${formTitle}</h2><form id="auth-form" data-endpoint="${endpoint}" class="space-y-4"><div><label for="username" class="block text-sm font-medium text-gray-300">Username</label><input type="text" name="username" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required></div><div><label for="password" class="block text-sm font-medium text-gray-300">Password</label><input type="password" name="password" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-indigo-500 focus:border-indigo-500" required></div><button type="submit" class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"><span class="btn-text">${formTitle}</span><span class="loader btn-loader hidden"></span></button><p id="auth-error" class="text-red-400 text-sm mt-2 text-center h-4"></p></form><button id="switch-auth-mode" class="text-center w-full mt-4 text-sm text-blue-400 hover:underline">${switchText}</button>`;
+            domAuth.modal.classList.remove('hidden');
+        }
+
+        // --- MAIN APP LOGIC (API CALLS, RENDERERS) ---
+        async function fetchLibrary() {
+            if (!authState.logged_in) return;
+            try {
+                const response = await fetch('/api/library');
+                const library = await response.json();
+                renderLibrary(library);
+            } catch (e) { console.error("Failed to fetch library", e); }
+        }
+        
+        function renderLibrary(library) {
+            if (!library || library.length === 0) {
+                dom.libraryContainer.innerHTML = '<p class="text-gray-500 text-sm text-center">Your saved papers will appear here.</p>';
                 return;
             }
-            
-            showStatus(`Uploading ${files.length} file(s)...`, 'loading');
-            const formData = new FormData();
-            for (const file of files) {
-                formData.append('file', file);
-            }
-            
-            try {
-                const response = await fetch('/api/upload', { method: 'POST', body: formData });
-                const result = await response.json();
-                showStatus(response.ok ? result.success : result.error, response.ok ? 'success' : 'error');
-            } catch (error) {
-                showStatus('An error occurred during upload.', 'error');
-            }
+            dom.libraryContainer.innerHTML = library.map(paper => `
+                <div class="text-sm p-2 bg-gray-800 rounded flex justify-between items-center group">
+                    <span class="truncate pr-2" title="${paper.file_name}">${paper.file_name}</span>
+                    <div class="flex items-center space-x-1">
+                        <button class="summarize-btn p-1 text-gray-400 hover:text-white" data-path="${paper.file_path}" title="Summarize"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path d="M9 2a1 1 0 000 2h2a1 1 0 100-2H9z" /><path fill-rule="evenodd" d="M4 5a2 2 0 012-2 3 3 0 003 3h2a3 3 0 003-3 2 2 0 012 2v11a2 2 0 01-2 2H6a2 2 0 01-2-2V5zm3 4a1 1 0 000 2h.01a1 1 0 100-2H7zm3 0a1 1 0 000 2h3a1 1 0 100-2h-3zm-3 4a1 1 0 100 2h.01a1 1 0 100-2H7zm3 0a1 1 0 100 2h3a1 1 0 100-2h-3z" clip-rule="evenodd" /></svg></button>
+                        <a href="/api/download/${paper.file_name}" class="p-1 text-gray-400 hover:text-white" title="Download"><svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clip-rule="evenodd" /></svg></a>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // --- EVENT LISTENERS ---
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAuthStatus();
+            // other init functions
         });
         
-        questionForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const question = questionInput.value.trim();
-            if (!question) return;
+        document.addEventListener('submit', async e => {
+            if (e.target.id === 'auth-form') {
+                e.preventDefault();
+                const form = e.target;
+                const submitButton = form.querySelector('button[type="submit"]');
+                const btnText = submitButton.querySelector('.btn-text');
+                const btnLoader = submitButton.querySelector('.btn-loader');
+                const errorP = form.querySelector('#auth-error');
 
-            chatbotOutput.classList.remove('hidden');
-            chatbotOutput.innerHTML = '<div class="loader mx-auto"></div>';
-            
-            try {
-                const response = await fetch('/api/ask', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ question, draft_context: quill.getText() }),
-                });
-                const result = await response.json();
-                if (result.success) {
-                    chatbotOutput.innerHTML = `<p class="whitespace-pre-wrap">${result.summary}</p>`;
-                } else {
-                    chatbotOutput.innerHTML = `<p class="text-red-400">${result.error}</p>`;
+                btnText.classList.add('hidden'); btnLoader.classList.remove('hidden');
+                submitButton.disabled = true; errorP.textContent = '';
+
+                try {
+                    const response = await fetch(form.dataset.endpoint, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(Object.fromEntries(new FormData(form)))
+                    });
+                    const result = await response.json();
+                    if (!response.ok) throw new Error(result.error);
+                    
+                    domAuth.modal.classList.add('hidden');
+                    await checkAuthStatus();
+                } catch (err) {
+                    errorP.textContent = err.message || 'Network error.';
+                } finally {
+                    btnText.classList.remove('hidden'); btnLoader.classList.add('hidden');
+                    submitButton.disabled = false;
                 }
-            } catch (error) {
-                chatbotOutput.innerHTML = `<p class="text-red-400">An error occurred.</p>`;
-            } finally {
-                updateStats();
             }
         });
 
-        // --- UI UPDATE FUNCTIONS ---
-        function displayLiveAnalysis(analysis) {
-            liveAnalysisPanel.innerHTML = ''; 
-
-            const sections = [];
-
-            if (analysis.potential_citations?.length > 0) {
-                let html = `<div><h3 class="text-lg font-semibold text-blue-400 mb-2">Potential Citations</h3><div class="space-y-3">`;
-                analysis.potential_citations.forEach(c => {
-                    html += `<div class="bg-gray-700/50 p-3 rounded-lg text-sm">
-                        <p class="text-gray-300"><strong>Your Claim:</strong> "${c.claim_in_draft}"</p>
-                        <p class="text-green-400 mt-1"><strong>Supporting Evidence:</strong> "${c.supporting_quote_from_context}"</p>
-                        <p class="text-xs text-gray-400 mt-1"><em>Source: ${c.source}</em></p>
-                    </div>`;
-                });
-                sections.push(html + `</div></div>`);
+        document.addEventListener('click', async e => {
+            if (e.target.id === 'show-login-btn') showAuthModal(true);
+            if (e.target.id === 'logout-btn') {
+                await fetch('/api/auth/logout', { method: 'POST' });
+                await checkAuthStatus();
             }
-
-            if (analysis.related_papers?.length > 0) {
-                let html = `<div><h3 class="text-lg font-semibold text-purple-400 mb-2">Related Papers</h3><ul class="list-disc list-inside space-y-1 text-sm">`;
-                analysis.related_papers.forEach(p => { html += `<li class="text-gray-300">${p}</li>`; });
-                sections.push(html + `</ul></div>`);
+            if (e.target.closest('.requires-login')) showAuthModal(true);
+            if (e.target.id === 'switch-auth-mode') {
+                const isLogin = document.getElementById('auth-form').dataset.endpoint.includes('login');
+                showAuthModal(!isLogin);
             }
             
-            if (analysis.validation_feedback?.length > 0) {
-                 let html = `<div><h3 class="text-lg font-semibold text-yellow-400 mb-2">Validation Feedback</h3><div class="space-y-3">`;
-                analysis.validation_feedback.forEach(v => {
-                    html += `<div class="bg-yellow-900/50 p-3 rounded-lg text-sm border border-yellow-500">
-                        <p class="text-gray-300"><strong>Statement:</strong> "${v.draft_statement}"</p>
-                        <p class="text-yellow-300 mt-1"><strong>Feedback:</strong> ${v.feedback}</p>
-                    </div>`;
+            const summarizeBtn = e.target.closest('.summarize-btn');
+            if (summarizeBtn) {
+                const path = summarizeBtn.dataset.path;
+                dom.chatbotOutput.innerHTML = '<div class="loader mx-auto"></div>';
+                dom.chatbotWindow.classList.add('open');
+                const response = await fetch('/api/summarize', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ file_path: path })
                 });
-                sections.push(html + `</div></div>`);
+                const result = await response.json();
+                dom.chatbotOutput.innerHTML = `<p class="whitespace-pre-wrap">${result.summary || result.error}</p>`;
             }
-            
-            if (sections.length > 0) {
-                liveAnalysisPanel.innerHTML = sections.join('');
-            } else {
-                 liveAnalysisPanel.innerHTML = '<p class="text-gray-500" id="analysis-placeholder">No specific feedback at the moment. Keep writing or add more relevant documents to the knowledge base.</p>';
-            }
-        }
-        
-        function displayAnalysisError(message) {
-             liveAnalysisPanel.innerHTML = `<p class="text-red-400">${message}</p>`;
-        }
-        
-        function showStatus(message, type = 'info') {
-            uploadStatus.textContent = message;
-            const colors = { success: 'text-green-400', error: 'text-red-400', loading: 'text-blue-400' };
-            uploadStatus.className = `mt-2 text-sm ${colors[type] || 'text-gray-400'}`;
-        }
+        });
 
-        async function updateStats() {
-            try {
-                const response = await fetch('/api/stats');
-                const stats = await response.json();
-                questionsCounter.textContent = stats.questions_asked;
-                reportsCounter.textContent = stats.reports_generated;
-            } catch (error) {
-                console.error('Failed to fetch stats:', error);
-            }
-        }
+        dom.toggleControlsBtn.addEventListener('click', () => dom.controlsPanel.classList.toggle('open'));
+        dom.closeControlsBtn.addEventListener('click', () => dom.controlsPanel.classList.remove('open'));
+        domAuth.closeModalBtn.addEventListener('click', () => domAuth.modal.classList.add('hidden'));
+        dom.chatbotFab.addEventListener('click', () => dom.chatbotWindow.classList.toggle('open'));
+        dom.closeChatbotBtn.addEventListener('click', () => dom.chatbotWindow.classList.remove('open'));
+        dom.closeFeedbackBtn.addEventListener('click', () => dom.feedbackPanel.classList.remove('open'));
 
-        // --- INITIAL LOAD & LISTENERS ---
-        document.addEventListener('DOMContentLoaded', updateStats);
-        quill.on('text-change', debounce(analyzeDraft, 2000));
     </script>
 </body>
 </html>
+

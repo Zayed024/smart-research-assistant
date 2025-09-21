@@ -1,4 +1,3 @@
-# rag_pipeline.py
 import os
 import getpass
 import json
@@ -17,23 +16,28 @@ load_dotenv()
 if "GEMINI_API_KEY" not in os.environ:
     os.environ["GEMINI_API_KEY"] = getpass.getpass("Enter your Google AI API key: ")
 
+# This llm object is now created here to be passed into the pipeline
 llm = ChatGoogleGenerativeAI(
-    model="gemini-2.5-flash", 
+    model="gemini-1.5-flash",
     temperature=0.1,
     max_tokens=None,
     timeout=None,
     max_retries=2,
+    # Adding JSON mode for more reliable analysis
+    model_kwargs={"response_format": {"type": "json_object"}},
 )
 
 class RagPipeline:
-    def __init__(self):
+    def __init__(self, llm):
+        self.llm = llm
         self.text_splitter = RecursiveCharacterTextSplitter(chunk_size=1000, chunk_overlap=150)
         self.embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
         self.vector_store = None
         self._initialize_vector_store()
 
     def _initialize_vector_store(self):
-        placeholder_text = ["Initialize with some text to create the vector store"]
+        # Initialize with placeholder text to create the vector store index
+        placeholder_text = ["This is a placeholder to initialize the FAISS vector store."]
         self.vector_store = FAISS.from_texts(placeholder_text, self.embeddings)
 
     def _load_documents(self, filepath):
@@ -41,6 +45,7 @@ class RagPipeline:
         if extension.lower() == '.pdf':
             loader = PyPDFLoader(filepath)
         else:
+            # Default to TextLoader for .txt and other file types
             loader = TextLoader(filepath, encoding='utf-8')
         return loader.load()
 
@@ -60,7 +65,9 @@ class RagPipeline:
         docs_to_add = []
         for item in pathway_data:
             doc_content = item.get('doc', '')
-            metadata = {'source': item.get('metadata', 'live_stream')}
+            # Ensure metadata is a dictionary with a 'source' key
+            metadata_path = item.get('metadata', 'live_stream')
+            metadata = {'source': os.path.basename(metadata_path)}
             docs_to_add.append(Document(page_content=doc_content, metadata=metadata))
         
         if docs_to_add:
@@ -70,7 +77,7 @@ class RagPipeline:
                 print(f"Added {len(chunks)} chunks from Pathway to the knowledge base.")
 
     def analyze_draft(self, draft_content):
-        print(f"Analyzing draft content...")
+        print("Analyzing draft content...")
         try:
             retriever = self.vector_store.as_retriever(search_kwargs={"k": 5})
             retrieved_docs = retriever.invoke(draft_content)
@@ -81,62 +88,43 @@ class RagPipeline:
             context = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
             
             system_message = """
-            You are an expert academic research assistant. Your task is to analyze an author's draft text based *only* on a provided context of source documents. Your goal is to help them improve their paper by suggesting citations, identifying related work, and validating their claims against the sources.
-
-            Follow these rules strictly:
-            1.  Base all your output *exclusively* on the provided 'Context Documents'. Do not use outside knowledge.
-            2.  Your entire response must be a single, valid JSON object. Do not add any text before or after the JSON.
-            3.  If the context is insufficient to perform a task, return an empty list `[]` for that key.
+            You are an expert academic research assistant. Analyze an author's draft based *only* on the provided context of source documents.
+            Your entire response must be a single, valid JSON object. Do not add any text before or after the JSON.
+            If the context is insufficient, return an empty list `[]` for the corresponding key.
             """
 
             human_template = """
-            Here is the information for your analysis:
-
             **Context Documents:**
             {context}
-
             ---
-
             **Author's Draft Text:**
             {draft}
-
             ---
-
             **Your Task:**
             Analyze the "Author's Draft Text" using *only* the "Context Documents". Generate a JSON object with the following keys:
 
-            1.  "potential_citations": An array of objects. For each claim in the draft that is directly supported by the context, create an object with:
+            1.  "potential_citations": Array of objects. For each claim in the draft directly supported by the context, create an object with:
                 - "claim_in_draft": The exact sentence from the author's draft.
                 - "supporting_quote_from_context": The specific quote from the context that supports the claim.
-                - "source": The source document of the quote (e.g., the filename).
+                - "source": The source document of the quote.
 
-            2.  "unsupported_claims": An array of strings. Identify factual claims or statements in the draft that *cannot* be verified or supported by the provided "Context Documents". List the exact sentences from the draft. This helps the author identify where they might need additional citations.
+            2.  "unsupported_claims": Array of strings. Identify factual claims in the draft that *cannot* be verified by the context.
 
-            3.  "related_papers": An array of strings. Suggest up to 3 source documents from the context that are highly relevant to the draft's main topic. List their source names.
+            3.  "related_papers": Array of strings. Suggest up to 3 source documents from the context relevant to the draft's main topic.
 
-            4.  "validation_feedback": An array of objects. Check for inconsistencies or contradictions between the draft and the context. For each finding, create an object with:
+            4.  "validation_feedback": Array of objects. Check for inconsistencies between the draft and the context. Create an object with:
                 - "draft_statement": The statement from the draft being checked.
-                - "feedback": Your analysis (e.g., "This statement appears to contradict the context, which states '...'").
+                - "feedback": Your analysis (e.g., "This contradicts the context, which states '...'").
                 - "source": The relevant source from the context.
-                If there are no inconsistencies, return an empty array.
-
-            JSON Output:
             """
 
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", system_message),
-                ("human", human_template),
-            ])
-
+            prompt = ChatPromptTemplate.from_messages([("system", system_message), ("human", human_template)])
             chain = prompt | self.llm | StrOutputParser()
-
-            json_string_output = chain.invoke({
-                "context": context,
-                "draft": draft_content
-            })
+            json_string_output = chain.invoke({"context": context, "draft": draft_content})
 
             try:
                 analysis_result = json.loads(json_string_output)
+                # Ensure all keys exist in the final output
                 analysis_result.setdefault('potential_citations', [])
                 analysis_result.setdefault('unsupported_claims', [])
                 analysis_result.setdefault('related_papers', [])
@@ -153,27 +141,19 @@ class RagPipeline:
     def generate_report(self, question, draft_context=""):
         print(f"Generating report for question: '{question}'")
         try:
-            combined_query = question
-            if draft_context:
-                combined_query += "\n\nRelevant context from the user's current work:\n" + draft_context
-
             retriever = self.vector_store.as_retriever(search_kwargs={"k": 4})
-            retrieved_docs = retriever.invoke(combined_query)
+            retrieved_docs = retriever.invoke(question + "\n" + draft_context)
 
             context = "\n\n---\n\n".join([doc.page_content for doc in retrieved_docs])
             sources = list(set([doc.metadata.get('source', 'Unknown') for doc in retrieved_docs]))
 
             if not retrieved_docs:
-                 return {"summary": "Could not find relevant information in the uploaded documents to answer the question.", "sources": []}
+                return {"summary": "Could not find relevant information to answer the question.", "sources": []}
 
-            system_message = """
-            You are a smart research assistant. Your task is to answer a user's question based on two sources of information:
-            1. A provided context of source documents.
-            2. The user's own draft paper text.
-            Answer concisely and base your answer *only* on the provided information. If the answer isn't in the context, say so.
-            """
+            prompt_template = """
+            Answer the user's question based *only* on the provided "Context Documents" and "User's Draft".
+            If the information is not in the context, state that clearly.
             
-            human_message = """
             Context Documents:
             {context}
             ---
@@ -181,24 +161,51 @@ class RagPipeline:
             {draft_context}
             ---
             Question: {question}
+            Answer:
             """
-            
-            prompt = ChatPromptTemplate.from_messages([
-                ("system", system_message),
-                ("human", human_message)
-            ])
-            
-            output_parser = StrOutputParser()
-            chain = prompt | self.llm | output_parser
-            
-            summary = chain.invoke({
-                "context": context,
-                "draft_context": draft_context,
-                "question": question
-            })
+            prompt = ChatPromptTemplate.from_template(prompt_template)
+            chain = prompt | self.llm | StrOutputParser()
+            summary = chain.invoke({"context": context, "draft_context": draft_context, "question": question})
             
             return {"success": True, "summary": summary, "sources": sources}
         except Exception as e:
             print(f"Error during report generation: {e}")
             return {"error": "Failed to generate report."}
+
+    def search_concept(self, topic):
+        print(f"Searching for concept: {topic}")
+        try:
+            retriever = self.vector_store.as_retriever(search_kwargs={"k": 5})
+            results = retriever.invoke(topic)
+            # Use a set to avoid duplicate file paths
+            unique_papers = {doc.metadata.get('source', 'Unknown') for doc in results}
+            return [{"path": paper} for paper in unique_papers if paper != 'Unknown']
+        except Exception as e:
+            print(f"Error during concept search: {e}")
+            return []
+
+    def summarize_document(self, filepath):
+        print(f"Summarizing document: {filepath}")
+        try:
+            if not os.path.exists(filepath):
+                return "Error: File not found."
+            
+            docs = self._load_documents(filepath)
+            full_text = " ".join([doc.page_content for doc in docs])
+            
+            # Take the first ~4000 characters for a concise summary
+            text_to_summarize = full_text[:4000]
+
+            prompt_template = "Provide a concise, one-paragraph summary of the following academic text:\n\n{document_text}"
+            prompt = ChatPromptTemplate.from_template(prompt_template)
+            
+            # Use a separate LLM instance without JSON mode for plain text summary
+            summary_llm = ChatGoogleGenerativeAI(model="gemini-1.5-flash", temperature=0.2)
+            chain = prompt | summary_llm | StrOutputParser()
+            
+            summary = chain.invoke({"document_text": text_to_summarize})
+            return summary
+        except Exception as e:
+            print(f"Error during summarization: {e}")
+            return "Error: Could not generate summary for the document."
 
