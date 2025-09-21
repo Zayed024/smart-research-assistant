@@ -8,3 +8,8 @@ faiss-cpu
 pypdf
 langchain-huggingface
 PyPDF2
+pypdfium2
+docx2txt
+pytesseract
+pdf2image
+pillow

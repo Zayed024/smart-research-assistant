@@ -56,7 +56,7 @@ def decode_file(data_bytes, file_path:str):
 UPLOAD_FOLDER = 'uploaded_files'
 LIVE_DATA_FOLDER = 'live_data_source'
 DATABASE = 'research_assistant.db'
-ALLOWED_EXTENSIONS = {'txt', 'pdf'}
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'docx', 'png', 'jpg', 'jpeg'}
 
 app = Flask(__name__, template_folder='.')
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
@@ -139,9 +139,35 @@ def upload_file():
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     file.save(filepath)
 
-    rag_pipeline.add_document(filepath)
+    # Check if this file requires OCR processing
+    _, extension = os.path.splitext(filepath)
+    extension = extension.lower()
 
-    return jsonify({"success": f"File '{filename}' uploaded and processed."}), 200
+    if extension == '.pdf':
+        # For PDFs, check if regular loader will work or if OCR is needed
+        try:
+            from langchain_community.document_loaders import PyPDFLoader
+            loader = PyPDFLoader(filepath)
+            docs = loader.load()
+            has_content = any(len(doc.page_content.strip()) > 0 for doc in docs)
+
+            if not has_content:
+                # OCR will be needed - return early with OCR status
+                return jsonify({
+                    "success": f"File '{filename}' uploaded. OCR processing required - this may take a minute...",
+                    "requires_ocr": True,
+                    "filename": filename
+                }), 200
+        except Exception as e:
+            print(f"Error checking PDF content: {e}")
+
+    # For non-PDF files or PDFs that don't need OCR, process normally
+    success = rag_pipeline.add_document(filepath)
+
+    if success:
+        return jsonify({"success": f"File '{filename}' uploaded and processed."}), 200
+    else:
+        return jsonify({"error": f"Could not parse content from '{filename}'. Please try a different file."}), 400
 
 @app.route('/api/live_analyze', methods=['POST'])
 def live_analyze():
