@@ -211,31 +211,31 @@ class RagPipeline:
             traceback.print_exc()
             return {"error": "An internal error occurred during analysis."}
 
-        def generate_report(self, question, draft_context=""):
-            print(f"Generating report for question: '{question}'")
-            try:
-                if self.vector_store is None:
-                    return {"success": False, "error": "Please upload a source document first."}
-                combined_query = question
-                if draft_context:
-                    combined_query += "\n\nRelevant context from the user's current work:\n" + draft_context
-                retriever = self.vector_store.as_retriever(search_kwargs={"k": 4})
-                retrieved_docs = retriever.invoke(combined_query)
-                if not retrieved_docs:
-                    return {"success": True, "summary": "Could not find relevant information to answer.", "sources": []}
-                source_objects = [
-                    {"source": doc.metadata.get('source', 'Unknown'), "content": doc.page_content}
-                    for doc in retrieved_docs
-                ]
-                unique_sources = list({v['content']:v for v in source_objects}.values())
-                context = "\n\n---\n\n".join([doc["content"] for doc in unique_sources])
-                system_message = "You are a smart research assistant. Answer the user's question concisely based *only* on the provided context. If the answer isn't in the context, say so."
-                human_message = "Context Documents:\n{context}\n---\nQuestion: {question}"
-                prompt = ChatPromptTemplate.from_messages([("system", system_message), ("human", human_message)])
-                output_parser = StrOutputParser()
-                chain = prompt | self.llm | output_parser
-                summary = chain.invoke({"context": context, "question": question})
-                return {"success": True, "summary": summary, "sources": unique_sources}
-            except Exception as e:
-                print(f"Error during report generation: {e}")
-                return {"error": "Failed to generate report."}
+    def generate_report(self, question, draft_context=""):
+        print(f"Generating report for question: '{question}'")
+        try:
+            if self.vector_store is None:
+                return {"success": False, "error": "Please upload a source document first."}
+            combined_query = question
+            if draft_context:
+                combined_query += "\n\nRelevant context from the user's current work:\n" + draft_context
+            retriever = self.vector_store.as_retriever(search_kwargs={"k": 4})
+            retrieved_docs = retriever.invoke(combined_query)
+            if not retrieved_docs:
+                return {"success": True, "summary": "Could not find relevant information to answer.", "sources": []}
+            source_objects = [
+                {"source": doc.metadata.get('source', 'Unknown'), "content": doc.page_content}
+                for doc in retrieved_docs
+            ]
+            unique_sources = list({v['content']:v for v in source_objects}.values())
+            context = "\n\n---\n\n".join([doc["content"] for doc in unique_sources])
+            system_message = "You are a smart research assistant. Answer the user's question concisely based *only* on the provided context. If the answer isn't in the context, say so."
+            human_message = "Context Documents:\n{context}\n---\nQuestion: {question}"
+            prompt = ChatPromptTemplate.from_messages([("system", system_message), ("human", human_message)])
+            output_parser = StrOutputParser()
+            chain = prompt | self.llm | output_parser
+            summary = chain.invoke({"context": context, "question": question})
+            return {"success": True, "summary": summary, "sources": unique_sources}
+        except Exception as e:
+            print(f"Error during report generation: {e}")
+            return {"error": "Failed to generate report."}

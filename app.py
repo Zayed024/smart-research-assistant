@@ -152,9 +152,21 @@ def upload_file():
             has_content = any(len(doc.page_content.strip()) > 0 for doc in docs)
 
             if not has_content:
-                # OCR will be needed - return early with OCR status
+                # Mark OCR as in progress
+                global ocr_processing_status
+                ocr_processing_status[filename] = "processing"
+
+                # Start OCR processing asynchronously
+                def async_ocr_process():
+                    rag_pipeline.add_document(filepath)
+                    # Mark OCR as done
+                    ocr_processing_status[filename] = "done"
+                import threading
+                threading.Thread(target=async_ocr_process, daemon=True).start()
+
+                # Return immediately with OCR status
                 return jsonify({
-                    "success": f"File '{filename}' uploaded. OCR processing required - this may take a minute...",
+                    "success": f"File '{filename}' uploaded. OCR processing started asynchronously.",
                     "requires_ocr": True,
                     "filename": filename
                 }), 200
