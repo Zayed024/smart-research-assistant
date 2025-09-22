@@ -156,6 +156,17 @@ def allowed_file(filename):
 def index():
     return render_template('index.html')
 
+# Serve top-level static assets (CSS/JS) referenced by index.html
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+
+@app.route('/styles.css')
+def styles():
+    return send_from_directory(BASE_DIR, 'styles.css')
+
+@app.route('/script.js')
+def script_js():
+    return send_from_directory(BASE_DIR, 'script.js')
+
 @app.route('/api/upload', methods=['POST'])
 @login_required
 def upload_file():
