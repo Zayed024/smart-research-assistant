@@ -15,6 +15,7 @@ const analysisContent = document.getElementById('analysis-content');
 const analysisPlaceholder = document.getElementById('analysis-placeholder');
 const analysisLoader = document.getElementById('analysis-loader');
 const qaResponse = document.getElementById('qa-response');
+const qaHistoryDiv = document.getElementById('qa-history');
 const exportButton = document.getElementById('export-button');
 
 let currentReportData = null;
@@ -64,6 +65,11 @@ const debouncedAnalyze = debounce(analyzeDraft, 1500);
 
 async function askQuestion(e) {
     e.preventDefault();
+    if (!currentUser) {
+        qaResponse.innerHTML = `<p class="text-sm text-yellow-400">Please log in to ask questions.</p>`;
+        showLoginModal();
+        return;
+    }
     const question = questionInput.value.trim();
     const draftContext = draftEditor.value.trim();
     if (!question) return;
@@ -108,11 +114,13 @@ async function askQuestion(e) {
         qaResponse.innerHTML = `<p class="text-sm text-red-400">${errorMessage}</p>`;
     } finally {
         updateStats();
+        // Refresh history for authenticated users
+        loadQaHistory().catch(() => {});
     }
 }
 
 
-function exportReport() {
+async function exportReport() {
     if (!currentReportData) {
         alert("No report data available to export.");
         return;
@@ -183,6 +191,29 @@ function exportReport() {
             bodyHtml += '</ul>';
         } else {
             bodyHtml += "<p>No sources were consulted.</p>";
+        }
+
+        // Try to include conversation history (if user is authenticated)
+        try {
+            const res = await fetch('/api/qa_history');
+            if (res.ok) {
+                const hist = await res.json();
+                if (hist.success && Array.isArray(hist.items) && hist.items.length > 0) {
+                    bodyHtml += `<h2>Conversation History</h2>`;
+                    bodyHtml += '<ul>';
+                    hist.items.forEach(item => {
+                        const created = new Date(item.created_at).toLocaleString();
+                        bodyHtml += `<li>
+                            <p><strong>${created}</strong></p>
+                            <p><strong>Q:</strong> ${escapeHtml(item.question)}</p>
+                            <p><strong>A:</strong> ${escapeHtml(item.answer)}</p>
+                        </li>`;
+                    });
+                    bodyHtml += '</ul>';
+                }
+            }
+        } catch (e) {
+            // ignore; history is optional
         }
     }
 
@@ -273,6 +304,12 @@ function displayAnalysis(result) {
 
 async function handleUpload(e) {
     e.preventDefault();
+    if (!currentUser) {
+        uploadStatus.textContent = 'Please log in to upload files.';
+        uploadStatus.className = 'mt-2 text-sm text-yellow-400';
+        showLoginModal();
+        return;
+    }
     const file = fileInput.files[0];
     if (!file) {
         uploadStatus.textContent = 'Please select a file.';
@@ -612,6 +649,7 @@ async function handleLogout() {
 
 // --- LEARNING MODULE FUNCTIONS ---
 async function searchConcept() {
+    if (!currentUser) { showLoginModal(); return; }
     const topic = prompt('Enter a topic to search for:');
     if (!topic) return;
 
@@ -681,6 +719,7 @@ async function summarizePaper(filepath) {
 
 // --- LIBRARY FUNCTIONS ---
 async function showLibrary() {
+    if (!currentUser) { showLoginModal(); return; }
     try {
         const response = await fetch('/api/library');
         const papers = await response.json();
@@ -733,12 +772,15 @@ document.addEventListener('DOMContentLoaded', () => {
         console.log('Auth check failed, setting up UI for guest user');
         updateAuthUI();
     });
+    // Try to load existing history
+    loadQaHistory().catch(() => {});
 });
 
 // --- DOCUMENT ORGANIZATION FUNCTIONS ---
 
 // Show/hide document organization section
 function showDocumentOrganization() {
+    if (!currentUser) { showLoginModal(); return; }
     const orgSection = document.getElementById('document-organization-section');
     if (orgSection.classList.contains('hidden')) {
         orgSection.classList.remove('hidden');
@@ -956,6 +998,7 @@ function downloadDocument(filename) {
 
 // Add to category modal
 function addToCategory(documentId) {
+    if (!currentUser) { showLoginModal(); return; }
     const modal = createModal('Add to Category', `
         <form id="add-to-category-form">
             <div class="mb-4">
@@ -1028,6 +1071,7 @@ async function handleAddToCategory(e, documentId) {
 
 // Add tag modal
 function addTag(documentId) {
+    if (!currentUser) { showLoginModal(); return; }
     const modal = createModal('Add Tag', `
         <form id="add-tag-form">
             <div class="mb-4">
@@ -1111,3 +1155,54 @@ window.showDocumentDetails = showDocumentDetails;
 window.downloadDocument = downloadDocument;
 window.addToCategory = addToCategory;
 window.addTag = addTag;
+
+// --- Q&A HISTORY FUNCTIONS ---
+async function loadQaHistory() {
+    if (!qaHistoryDiv) return;
+    try {
+        const res = await fetch('/api/qa_history');
+        if (!res.ok) {
+            qaHistoryDiv.innerHTML = '';
+            return;
+        }
+        const data = await res.json();
+        if (!data.success) {
+            qaHistoryDiv.innerHTML = '';
+            return;
+        }
+        qaHistoryDiv.innerHTML = data.items.map(item => renderHistoryItem(item)).join('');
+    } catch (e) {
+        qaHistoryDiv.innerHTML = '';
+    }
+}
+
+function renderHistoryItem(item) {
+    const created = new Date(item.created_at).toLocaleString();
+    let sourcesHtml = '';
+    if (Array.isArray(item.sources) && item.sources.length > 0) {
+        sourcesHtml = '<div class="mt-2">' +
+            '<h5 class="text-xs text-gray-400 mb-1">Sources</h5>' +
+            item.sources.map(s => {
+                const name = (s.source || 'Unknown').split(/[\\\/]/).pop();
+                return `<div class="text-xs text-gray-400">• ${name}</div>`;
+            }).join('') +
+            '</div>';
+    }
+    return `
+    <div class="analysis-card">
+        <div class="text-xs text-gray-500 mb-1">${created}</div>
+        <div class="text-sm text-purple-300 mb-1"><strong>Q:</strong> ${escapeHtml(item.question)}</div>
+        <div class="text-sm text-gray-300"><strong>A:</strong> ${escapeHtml(item.answer)}</div>
+        ${sourcesHtml}
+    </div>`;
+}
+
+function escapeHtml(str) {
+    if (typeof str !== 'string') return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/\"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}

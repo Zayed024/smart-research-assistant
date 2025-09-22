@@ -79,3 +79,15 @@ CREATE TABLE IF NOT EXISTS library (
     FOREIGN KEY (user_id) REFERENCES users (id),
     UNIQUE(user_id, file_path)
 );
+
+-- Q&A history per user
+CREATE TABLE IF NOT EXISTS qa_history (
+    id INTEGER PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    question TEXT NOT NULL,
+    answer TEXT NOT NULL,
+    sources_json TEXT,
+    draft_context TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users (id)
+);

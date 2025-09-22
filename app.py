@@ -296,10 +296,53 @@ def ask_question():
     conn.execute("UPDATE usage_stats SET questions_asked = questions_asked + 1 WHERE id = 1")
     if report.get("success"):
          conn.execute("UPDATE usage_stats SET reports_generated = reports_generated + 1 WHERE id = 1")
+         # Persist Q&A to history for authenticated users
+         try:
+             if current_user.is_authenticated:
+                 conn.execute(
+                     '''INSERT INTO qa_history (user_id, question, answer, sources_json, draft_context)
+                        VALUES (?, ?, ?, ?, ?)''',
+                     (
+                         current_user.id,
+                         question,
+                         report.get("summary", "") if isinstance(report, dict) else str(report),
+                         json.dumps(report.get("sources", [])) if isinstance(report, dict) else json.dumps([]),
+                         draft_context or ""
+                     )
+                 )
+         except Exception as e:
+             print(f"[qa_history] Failed to save: {e}")
     conn.commit()
     conn.close()
 
     return jsonify(report)
+
+
+@app.route('/api/qa_history', methods=['GET'])
+@login_required
+def get_qa_history():
+    conn = get_db_connection()
+    rows = conn.execute(
+        '''SELECT id, question, answer, sources_json, draft_context, created_at
+           FROM qa_history WHERE user_id = ?
+           ORDER BY created_at DESC LIMIT 100''', (current_user.id,)
+    ).fetchall()
+    conn.close()
+    items = []
+    for r in rows:
+        try:
+            sources = json.loads(r['sources_json']) if r['sources_json'] else []
+        except Exception:
+            sources = []
+        items.append({
+            "id": r['id'],
+            "question": r['question'],
+            "answer": r['answer'],
+            "sources": sources,
+            "draft_context": r['draft_context'],
+            "created_at": r['created_at']
+        })
+    return jsonify({"success": True, "items": items})
 
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
