@@ -5,39 +5,24 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Smart Research Assistant</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap(https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap)" rel="stylesheet">
-    <style>
-        body { font-family: 'Inter', sans-serif; }
-        .scroll-container::-webkit-scrollbar { width: 4px; }
-        .scroll-container::-webkit-scrollbar-thumb { background-color: #4a5568; border-radius: 20px; }
-        .analysis-card {
-            background-color: rgba(55, 65, 81, 0.5); /* bg-gray-700/50 */
-            border-radius: 0.5rem;
-            padding: 1rem;
-            border: 1px solid rgb(75 85 99);
-        }
-        details > summary {
-            list-style: none;
-            cursor: pointer;
-        }
-        details > summary::-webkit-details-marker {
-            display: none;
-        }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        .pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
 </head>
 <body class="bg-gray-900 text-white">
 
     <div class="container mx-auto p-4 md:p-8">
         <header class="text-center mb-8">
-            <h1 class="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
-                Smart Research Assistant
-            </h1>
-            <p class="text-gray-400 mt-2">Your AI-powered agent for academic writing.</p>
+            <div class="flex justify-between items-center mb-4">
+                <div>
+                    <h1 class="text-4xl md:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500">
+                        Smart Research Assistant
+                    </h1>
+                    <p class="text-gray-400 mt-2">Your AI-powered agent for academic writing.</p>
+                </div>
+                <div id="auth-section" class="flex items-center space-x-4">
+                    <!-- Authentication UI will be inserted here -->
+                </div>
+            </div>
         </header>
 
         <main class="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -113,6 +98,104 @@
                 </div>
             </aside>
         </main>
+
+        <!-- Learning Modules Section (shown when authenticated) -->
+        <div id="learning-section" class="mt-8 grid grid-cols-1 md:grid-cols-2 gap-6 hidden">
+            <div class="bg-gray-800 p-6 rounded-2xl shadow-lg">
+                <h3 class="text-xl font-semibold mb-4 border-b border-gray-700 pb-2">Learning Modules</h3>
+                <div class="space-y-4">
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h4 class="font-medium text-blue-400 mb-2">Concept Search</h4>
+                        <p class="text-sm text-gray-300 mb-3">Search for academic papers and concepts in your knowledge base.</p>
+                        <button onclick="searchConcept()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                            Search Concepts
+                        </button>
+                    </div>
+                    <div class="bg-gray-700 p-4 rounded-lg">
+                        <h4 class="font-medium text-purple-400 mb-2">Document Summarization</h4>
+                        <p class="text-sm text-gray-300 mb-3">Get AI-powered summaries of your uploaded documents.</p>
+                        <button onclick="showLibrary()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                            View Library & Summarize
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 p-6 rounded-2xl shadow-lg">
+                <h3 class="text-xl font-semibold mb-4 border-b border-gray-700 pb-2">Quick Actions</h3>
+                <div class="space-y-3">
+                    <button onclick="showLibrary()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                        📚 My Library
+                    </button>
+                    <button onclick="searchConcept()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                        🔍 Search Knowledge Base
+                    </button>
+                    <button onclick="showDocumentOrganization()" class="w-full bg-orange-600 hover:bg-orange-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                        📋 Document Organization
+                    </button>
+                    <div class="bg-gray-700 p-3 rounded-lg">
+                        <h4 class="font-medium text-yellow-400 mb-1">Usage Stats</h4>
+                        <p class="text-sm text-gray-300">Questions Asked: <span id="questions-counter-2">0</span></p>
+                        <p class="text-sm text-gray-300">Reports Generated: <span id="reports-counter-2">0</span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Document Organization Section (shown when authenticated) -->
+        <div id="document-organization-section" class="mt-8 hidden">
+            <div class="bg-gray-800 p-6 rounded-2xl shadow-lg">
+                <div class="flex justify-between items-center mb-6 border-b border-gray-700 pb-4">
+                    <h2 class="text-2xl font-semibold">Document Organization</h2>
+                    <div class="flex space-x-2">
+                        <button onclick="showCreateCategoryModal()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                            + Category
+                        </button>
+                        <button onclick="showCreateTagModal()" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                            + Tag
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Search and Filter Controls -->
+                <div class="mb-6 grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <input type="text" id="doc-search-input" placeholder="Search documents..." class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <select id="category-filter" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            <option value="">All Categories</option>
+                        </select>
+                    </div>
+                    <div>
+                        <select id="tag-filter" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none">
+                            <option value="">All Tags</option>
+                        </select>
+                    </div>
+                    <div>
+                        <button onclick="searchDocuments()" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                            Search
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Documents List -->
+                <div id="documents-list" class="space-y-4">
+                    <!-- Documents will be loaded here -->
+                </div>
+
+                <!-- Loading indicator -->
+                <div id="documents-loading" class="text-center text-gray-400 py-8 hidden">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-400 mx-auto mb-2"></div>
+                    Loading documents...
+                </div>
+
+                <!-- No documents message -->
+                <div id="no-documents" class="text-center text-gray-500 py-8 hidden">
+                    <p>No documents found. Upload some documents to get started!</p>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -208,10 +291,22 @@
                         ${sourcesHtml}
                     </div>`;
                 } else {
-                    qaResponse.innerHTML = `<p class="text-sm text-red-400">${result.error || 'Failed to get answer.'}</p>`;
+                    // Handle specific error cases with user-friendly messages
+                    let errorMessage = result.error || 'Failed to get answer.';
+                    if (errorMessage.includes('Please upload a source document first')) {
+                        errorMessage = 'Please upload a source document first before asking questions.';
+                    }
+                    qaResponse.innerHTML = `<p class="text-sm text-red-400">${errorMessage}</p>`;
                 }
             } catch (error) {
-                qaResponse.innerHTML = `<p class="text-sm text-red-400">An error occurred.</p>`;
+                console.error('Q&A Error:', error);
+                let errorMessage = 'An error occurred. Please try again.';
+                if (error.name === 'TypeError' && error.message.includes('fetch')) {
+                    errorMessage = 'Network error. Please check your connection and try again.';
+                } else if (error.name === 'SyntaxError') {
+                    errorMessage = 'Invalid response from server. Please try again.';
+                }
+                qaResponse.innerHTML = `<p class="text-sm text-red-400">${errorMessage}</p>`;
             } finally {
                 updateStats();
             }
@@ -279,8 +374,10 @@
                 if (data.sources && data.sources.length > 0) {
                     bodyHtml += '<ul>';
                     data.sources.forEach(s => {
+                        const sourceName = s.source || 'Unknown Source';
+                        const cleanSourceName = sourceName.split(/[\\/]/).pop();
                         bodyHtml += `<li>
-                            <p class="source"><strong>Source:</strong> ${s.source.split(/[\\/]/).pop()}</p>
+                            <p class="source"><strong>Source:</strong> ${cleanSourceName}</p>
                             <blockquote>${s.content}</blockquote>
                         </li>`;
                     });
@@ -310,6 +407,10 @@
 
         // ---  Helper to create expandable source snippets ---
         function createSourceDetailHtml(sourceName, content) {
+            // Handle undefined or null source names
+            if (!sourceName) {
+                sourceName = 'Unknown Source';
+            }
             const cleanSourceName = sourceName.split(/[\\/]/).pop(); // Get just the filename
             return `
                 <details class="text-sm bg-gray-900/50 rounded p-2 mt-1">
@@ -483,8 +584,339 @@
                 const stats = await response.json();
                 questionsCounter.textContent = stats.questions_asked;
                 reportsCounter.textContent = stats.reports_generated;
+
+                // Update stats in learning section if it exists
+                const questionsCounter2 = document.getElementById('questions-counter-2');
+                const reportsCounter2 = document.getElementById('reports-counter-2');
+                if (questionsCounter2) questionsCounter2.textContent = stats.questions_asked;
+                if (reportsCounter2) reportsCounter2.textContent = stats.reports_generated;
             } catch (error) {
                 console.error('Failed to fetch stats:', error);
+            }
+        }
+
+        // --- AUTHENTICATION FUNCTIONS ---
+        let currentUser = null;
+
+        async function checkAuthStatus() {
+            try {
+                const response = await fetch('/api/auth/status');
+                const data = await response.json();
+                currentUser = data.logged_in ? { username: data.username } : null;
+                updateAuthUI();
+            } catch (error) {
+                console.error('Auth status check failed:', error);
+                currentUser = null;
+                updateAuthUI();
+            }
+        }
+
+        function updateAuthUI() {
+            const authSection = document.getElementById('auth-section');
+            const learningSection = document.getElementById('learning-section');
+            if (currentUser) {
+                authSection.innerHTML = `
+                    <div class="flex items-center space-x-4">
+                        <span class="text-green-400">Welcome, ${currentUser.username}!</span>
+                        <button id="logout-btn" class="bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-3 text-sm rounded-lg transition duration-300">
+                            Logout
+                        </button>
+                    </div>
+                `;
+                document.getElementById('logout-btn').addEventListener('click', handleLogout);
+
+                // Show learning section for authenticated users
+                learningSection.classList.remove('hidden');
+            } else {
+                authSection.innerHTML = `
+                    <div class="flex items-center space-x-2">
+                        <button id="login-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-3 text-sm rounded-lg transition duration-300">
+                            Login
+                        </button>
+                        <button id="register-btn" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-1 px-3 text-sm rounded-lg transition duration-300">
+                            Register
+                        </button>
+                    </div>
+                `;
+                document.getElementById('login-btn').addEventListener('click', showLoginModal);
+                document.getElementById('register-btn').addEventListener('click', showRegisterModal);
+
+                // Hide learning section for non-authenticated users
+                learningSection.classList.add('hidden');
+            }
+        }
+
+        function showLoginModal() {
+            const modal = createAuthModal('Login', `
+                <form id="login-form">
+                    <div class="mb-4">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">Username</label>
+                        <input type="text" id="login-username" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Enter your username">
+                    </div>
+                    <div class="mb-6">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">Password</label>
+                        <input type="password" id="login-password" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Enter your password">
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                            Login
+                        </button>
+                        <button type="button" id="switch-to-register" class="text-blue-400 hover:text-blue-300 text-sm">
+                            Need an account?
+                        </button>
+                    </div>
+                </form>
+            `);
+            document.body.appendChild(modal);
+
+            document.getElementById('login-form').addEventListener('submit', handleLogin);
+            document.getElementById('switch-to-register').addEventListener('click', () => {
+                modal.remove();
+                showRegisterModal();
+            });
+        }
+
+        function showRegisterModal() {
+            const modal = createAuthModal('Register', `
+                <form id="register-form">
+                    <div class="mb-4">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">Username</label>
+                        <input type="text" id="register-username" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Choose a username">
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">Password</label>
+                        <input type="password" id="register-password" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Choose a password">
+                    </div>
+                    <div class="mb-6">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">Confirm Password</label>
+                        <input type="password" id="register-confirm-password" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Confirm your password">
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                            Register
+                        </button>
+                        <button type="button" id="switch-to-login" class="text-purple-400 hover:text-purple-300 text-sm">
+                            Already have an account?
+                        </button>
+                    </div>
+                </form>
+            `);
+            document.body.appendChild(modal);
+
+            document.getElementById('register-form').addEventListener('submit', handleRegister);
+            document.getElementById('switch-to-login').addEventListener('click', () => {
+                modal.remove();
+                showLoginModal();
+            });
+        }
+
+        function createAuthModal(title, content) {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-gray-800 p-8 rounded-2xl shadow-xl max-w-md w-full mx-4">
+                    <h2 class="text-2xl font-bold text-white mb-6">${title}</h2>
+                    ${content}
+                    <button id="close-modal" class="absolute top-4 right-4 text-gray-400 hover:text-white text-2xl">&times;</button>
+                </div>
+            `;
+
+            // Add event listener to close button after modal is added to DOM
+            const closeButton = modal.querySelector('#close-modal');
+            if (closeButton) {
+                closeButton.addEventListener('click', () => modal.remove());
+            }
+
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.remove();
+            });
+            return modal;
+        }
+
+        async function handleLogin(e) {
+            e.preventDefault();
+            const username = document.getElementById('login-username').value;
+            const password = document.getElementById('login-password').value;
+
+            if (!username || !password) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    currentUser = { username: result.username };
+                    updateAuthUI();
+                    document.querySelector('.fixed.inset-0').remove();
+                    updateStats(); // Refresh stats after login
+                } else {
+                    alert(result.error || 'Login failed');
+                }
+            } catch (error) {
+                alert('Login failed. Please try again.');
+            }
+        }
+
+        async function handleRegister(e) {
+            e.preventDefault();
+            const username = document.getElementById('register-username').value;
+            const password = document.getElementById('register-password').value;
+            const confirmPassword = document.getElementById('register-confirm-password').value;
+
+            if (!username || !password || !confirmPassword) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            if (password !== confirmPassword) {
+                alert('Passwords do not match');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/auth/register', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    alert('Registration successful! You can now log in.');
+                    document.querySelector('.fixed.inset-0').remove();
+                    showLoginModal();
+                } else {
+                    alert(result.error || 'Registration failed');
+                }
+            } catch (error) {
+                alert('Registration failed. Please try again.');
+            }
+        }
+
+        async function handleLogout() {
+            try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+                currentUser = null;
+                updateAuthUI();
+                updateStats(); // Refresh stats after logout
+            } catch (error) {
+                console.error('Logout failed:', error);
+            }
+        }
+
+        // --- LEARNING MODULE FUNCTIONS ---
+        async function searchConcept() {
+            const topic = prompt('Enter a topic to search for:');
+            if (!topic) return;
+
+            try {
+                const response = await fetch('/api/learn', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ topic })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    displayConceptResults(topic, result.papers);
+                } else {
+                    alert(result.error || 'Search failed');
+                }
+            } catch (error) {
+                alert('Search failed. Please try again.');
+            }
+        }
+
+        function displayConceptResults(topic, papers) {
+            const resultsDiv = document.createElement('div');
+            resultsDiv.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            resultsDiv.innerHTML = `
+                <div class="bg-gray-800 p-8 rounded-2xl shadow-xl max-w-2xl w-full mx-4 max-h-96 overflow-y-auto">
+                    <h3 class="text-xl font-bold text-white mb-4">Results for: ${topic}</h3>
+                    <div class="space-y-2">
+                        ${papers.length > 0 ?
+                            papers.map(paper => `
+                                <div class="bg-gray-700 p-3 rounded-lg">
+                                    <p class="text-gray-300">${paper.path.split('/').pop()}</p>
+                                    <button onclick="summarizePaper('${paper.path}')" class="text-blue-400 hover:text-blue-300 text-sm mt-1">
+                                        Summarize
+                                    </button>
+                                </div>
+                            `).join('') :
+                            '<p class="text-gray-400">No papers found for this topic.</p>'
+                        }
+                    </div>
+                    <button onclick="this.parentElement.parentElement.remove()" class="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">
+                        Close
+                    </button>
+                </div>
+            `;
+            document.body.appendChild(resultsDiv);
+        }
+
+        async function summarizePaper(filepath) {
+            try {
+                const response = await fetch('/api/summarize_paper', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filepath })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    alert(`Summary: ${result.summary}`);
+                } else {
+                    alert(result.error || 'Summarization failed');
+                }
+            } catch (error) {
+                alert('Summarization failed. Please try again.');
+            }
+        }
+
+        // --- LIBRARY FUNCTIONS ---
+        async function showLibrary() {
+            try {
+                const response = await fetch('/api/library');
+                const papers = await response.json();
+
+                const libraryDiv = document.createElement('div');
+                libraryDiv.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                libraryDiv.innerHTML = `
+                    <div class="bg-gray-800 p-8 rounded-2xl shadow-xl max-w-2xl w-full mx-4 max-h-96 overflow-y-auto">
+                        <h3 class="text-xl font-bold text-white mb-4">My Library</h3>
+                        <div class="space-y-2">
+                            ${papers.length > 0 ?
+                                papers.map(paper => `
+                                    <div class="bg-gray-700 p-3 rounded-lg flex justify-between items-center">
+                                        <span class="text-gray-300">${paper.file_name}</span>
+                                        <div class="space-x-2">
+                                            <button onclick="summarizePaper('${paper.file_path}')" class="text-blue-400 hover:text-blue-300 text-sm">
+                                                Summarize
+                                            </button>
+                                            <a href="/download/${encodeURIComponent(paper.file_name)}" class="text-green-400 hover:text-green-300 text-sm">
+                                                Download
+                                            </a>
+                                        </div>
+                                    </div>
+                                `).join('') :
+                                '<p class="text-gray-400">Your library is empty.</p>'
+                            }
+                        </div>
+                        <button onclick="this.parentElement.parentElement.remove()" class="mt-4 bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg">
+                            Close
+                        </button>
+                    </div>
+                `;
+                document.body.appendChild(libraryDiv);
+            } catch (error) {
+                alert('Failed to load library. Please try again.');
             }
         }
 
@@ -493,7 +925,517 @@
         uploadForm.addEventListener('submit', handleUpload);
         questionForm.addEventListener('submit', askQuestion);
         exportButton.addEventListener('click', exportReport);
-        document.addEventListener('DOMContentLoaded', updateStats);
+
+        // Initialize the application
+        document.addEventListener('DOMContentLoaded', () => {
+            updateStats();
+            checkAuthStatus().catch(() => {
+                // If auth check fails, still set up the UI for non-authenticated users
+                console.log('Auth check failed, setting up UI for guest user');
+                updateAuthUI();
+            });
+        });
+
+        // --- DOCUMENT ORGANIZATION FUNCTIONS ---
+
+        // Show/hide document organization section
+        function showDocumentOrganization() {
+            const orgSection = document.getElementById('document-organization-section');
+            if (orgSection.classList.contains('hidden')) {
+                orgSection.classList.remove('hidden');
+                loadDocuments();
+                loadCategoriesAndTags();
+            } else {
+                orgSection.classList.add('hidden');
+            }
+        }
+
+        // Load documents with attribution information
+        async function loadDocuments() {
+            const documentsList = document.getElementById('documents-list');
+            const loadingIndicator = document.getElementById('documents-loading');
+            const noDocuments = document.getElementById('no-documents');
+
+            // Show loading indicator
+            documentsList.innerHTML = '';
+            loadingIndicator.classList.remove('hidden');
+            noDocuments.classList.add('hidden');
+
+            try {
+                const response = await fetch('/api/documents');
+                const documents = await response.json();
+
+                loadingIndicator.classList.add('hidden');
+
+                if (documents.length === 0) {
+                    noDocuments.classList.remove('hidden');
+                    return;
+                }
+
+                displayDocuments(documents);
+            } catch (error) {
+                console.error('Failed to load documents:', error);
+                loadingIndicator.classList.add('hidden');
+                documentsList.innerHTML = '<p class="text-red-400">Failed to load documents. Please try again.</p>';
+            }
+        }
+
+        // Display documents with attribution information
+        function displayDocuments(documents) {
+            const documentsList = document.getElementById('documents-list');
+            documentsList.innerHTML = '';
+
+            documents.forEach(doc => {
+                const docCard = document.createElement('div');
+                docCard.className = 'bg-gray-700 p-4 rounded-lg border border-gray-600';
+
+                // Format upload date
+                const uploadDate = new Date(doc.uploaded_at).toLocaleDateString();
+
+                // Get category and tag names
+                const categoryNames = doc.categories ? doc.categories.map(c => c.name).join(', ') : 'None';
+                const tagNames = doc.tags ? doc.tags.map(t => t.name).join(', ') : 'None';
+
+                docCard.innerHTML = `
+                    <div class="flex justify-between items-start mb-3">
+                        <div class="flex-1">
+                            <h4 class="font-semibold text-white mb-1">${doc.title || doc.filename}</h4>
+                            <p class="text-sm text-gray-400 mb-2">${doc.description || 'No description'}</p>
+                        </div>
+                        <div class="flex space-x-2">
+                            <button onclick="showDocumentDetails(${doc.id})" class="text-blue-400 hover:text-blue-300 text-sm">
+                                Details
+                            </button>
+                            <button onclick="downloadDocument('${doc.filename}')" class="text-green-400 hover:text-green-300 text-sm">
+                                Download
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                            <span class="text-gray-400">Uploaded by:</span>
+                            <span class="text-purple-400 ml-1">${doc.uploaded_by_username}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-400">Upload Date:</span>
+                            <span class="text-gray-300 ml-1">${uploadDate}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-400">Categories:</span>
+                            <span class="text-blue-400 ml-1">${categoryNames}</span>
+                        </div>
+                        <div>
+                            <span class="text-gray-400">Tags:</span>
+                            <span class="text-green-400 ml-1">${tagNames}</span>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 flex justify-between items-center">
+                        <div class="text-xs text-gray-500">
+                            ${doc.file_size} bytes • ${doc.file_type}
+                        </div>
+                        <div class="flex space-x-2">
+                            <button onclick="addToCategory(${doc.id})" class="text-blue-400 hover:text-blue-300 text-xs">
+                                + Category
+                            </button>
+                            <button onclick="addTag(${doc.id})" class="text-green-400 hover:text-green-300 text-xs">
+                                + Tag
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                documentsList.appendChild(docCard);
+            });
+        }
+
+        // Load categories and tags for filter dropdowns
+        async function loadCategoriesAndTags() {
+            try {
+                // Load categories
+                const catResponse = await fetch('/api/categories');
+                const categories = await catResponse.json();
+
+                // Load tags
+                const tagResponse = await fetch('/api/tags');
+                const tags = await tagResponse.json();
+
+                // Populate category filter dropdown
+                const categoryFilter = document.getElementById('category-filter');
+                categoryFilter.innerHTML = '<option value="">All Categories</option>' +
+                    categories.map(cat => `<option value="${cat.id}">${cat.name}</option>`).join('');
+
+                // Populate tag filter dropdown
+                const tagFilter = document.getElementById('tag-filter');
+                tagFilter.innerHTML = '<option value="">All Tags</option>' +
+                    tags.map(tag => `<option value="${tag.id}">${tag.name}</option>`).join('');
+
+            } catch (error) {
+                console.error('Failed to load categories and tags:', error);
+            }
+        }
+
+        // Search documents with filters
+        async function searchDocuments() {
+            const searchTerm = document.getElementById('doc-search-input').value;
+            const categoryId = document.getElementById('category-filter').value;
+            const tagId = document.getElementById('tag-filter').value;
+
+            const documentsList = document.getElementById('documents-list');
+            const loadingIndicator = document.getElementById('documents-loading');
+            const noDocuments = document.getElementById('no-documents');
+
+            // Show loading indicator
+            documentsList.innerHTML = '';
+            loadingIndicator.classList.remove('hidden');
+            noDocuments.classList.add('hidden');
+
+            try {
+                let url = '/api/documents';
+                const params = new URLSearchParams();
+                if (searchTerm) params.append('search', searchTerm);
+                if (categoryId) params.append('category', categoryId);
+                if (tagId) params.append('tag', tagId);
+
+                if (params.toString()) {
+                    url += '?' + params.toString();
+                }
+
+                const response = await fetch(url);
+                const documents = await response.json();
+
+                loadingIndicator.classList.add('hidden');
+
+                if (documents.length === 0) {
+                    noDocuments.classList.remove('hidden');
+                    return;
+                }
+
+                displayDocuments(documents);
+            } catch (error) {
+                console.error('Failed to search documents:', error);
+                loadingIndicator.classList.add('hidden');
+                documentsList.innerHTML = '<p class="text-red-400">Failed to search documents. Please try again.</p>';
+            }
+        }
+
+        // Create category modal
+        function showCreateCategoryModal() {
+            const modal = createModal('Create Category', `
+                <form id="create-category-form">
+                    <div class="mb-4">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">Category Name</label>
+                        <input type="text" id="category-name" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Enter category name" required>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">Description</label>
+                        <textarea id="category-description" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Enter category description" rows="3"></textarea>
+                    </div>
+                    <div class="mb-6">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">Color</label>
+                        <input type="color" id="category-color" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" value="#3B82F6">
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                            Create Category
+                        </button>
+                        <button type="button" onclick="closeModal()" class="text-gray-400 hover:text-white">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            `);
+            document.body.appendChild(modal);
+
+            document.getElementById('create-category-form').addEventListener('submit', handleCreateCategory);
+        }
+
+        // Handle category creation
+        async function handleCreateCategory(e) {
+            e.preventDefault();
+            const name = document.getElementById('category-name').value;
+            const description = document.getElementById('category-description').value;
+            const color = document.getElementById('category-color').value;
+
+            if (!name) {
+                alert('Please enter a category name');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/categories', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description, color })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    closeModal();
+                    await loadCategoriesAndTags();
+                    await loadDocuments(); // Refresh documents to show new category
+                    alert('Category created successfully!');
+                } else {
+                    alert(result.error || 'Failed to create category');
+                }
+            } catch (error) {
+                alert('Failed to create category. Please try again.');
+            }
+        }
+
+        // Create tag modal
+        function showCreateTagModal() {
+            const modal = createModal('Create Tag', `
+                <form id="create-tag-form">
+                    <div class="mb-4">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">Tag Name</label>
+                        <input type="text" id="tag-name" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Enter tag name" required>
+                    </div>
+                    <div class="mb-6">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">Description</label>
+                        <textarea id="tag-description" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Enter tag description" rows="3"></textarea>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                            Create Tag
+                        </button>
+                        <button type="button" onclick="closeModal()" class="text-gray-400 hover:text-white">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            `);
+            document.body.appendChild(modal);
+
+            document.getElementById('create-tag-form').addEventListener('submit', handleCreateTag);
+        }
+
+        // Handle tag creation
+        async function handleCreateTag(e) {
+            e.preventDefault();
+            const name = document.getElementById('tag-name').value;
+            const description = document.getElementById('tag-description').value;
+
+            if (!name) {
+                alert('Please enter a tag name');
+                return;
+            }
+
+            try {
+                const response = await fetch('/api/tags', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name, description })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    closeModal();
+                    await loadCategoriesAndTags();
+                    await loadDocuments(); // Refresh documents to show new tag
+                    alert('Tag created successfully!');
+                } else {
+                    alert(result.error || 'Failed to create tag');
+                }
+            } catch (error) {
+                alert('Failed to create tag. Please try again.');
+            }
+        }
+
+        // Show add to category modal
+        function addToCategory(documentId) {
+            const modal = createModal('Add to Category', `
+                <form id="add-to-category-form">
+                    <div class="mb-4">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">Select Category</label>
+                        <select id="category-select" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" required>
+                            <option value="">Choose a category...</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                            Add to Category
+                        </button>
+                        <button type="button" onclick="closeModal()" class="text-gray-400 hover:text-white">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            `);
+            document.body.appendChild(modal);
+
+            // Load categories into the select
+            loadCategoriesIntoSelect();
+
+            document.getElementById('add-to-category-form').addEventListener('submit', (e) => handleAddToCategory(e, documentId));
+        }
+
+        // Load categories into select dropdown
+        async function loadCategoriesIntoSelect() {
+            try {
+                const response = await fetch('/api/categories');
+                const categories = await response.json();
+
+                const select = document.getElementById('category-select');
+                select.innerHTML = '<option value="">Choose a category...</option>' +
+                    categories.map(cat => `<option value="${cat.id}">${cat.name}</option>`).join('');
+            } catch (error) {
+                console.error('Failed to load categories:', error);
+            }
+        }
+
+        // Handle adding document to category
+        async function handleAddToCategory(e, documentId) {
+            e.preventDefault();
+            const categoryId = document.getElementById('category-select').value;
+
+            if (!categoryId) {
+                alert('Please select a category');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/documents/${documentId}/categories`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ category_id: parseInt(categoryId) })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    closeModal();
+                    await loadDocuments(); // Refresh documents to show new category assignment
+                    alert('Document added to category successfully!');
+                } else {
+                    alert(result.error || 'Failed to add document to category');
+                }
+            } catch (error) {
+                alert('Failed to add document to category. Please try again.');
+            }
+        }
+
+        // Show add tag modal
+        function addTag(documentId) {
+            const modal = createModal('Add Tag', `
+                <form id="add-tag-form">
+                    <div class="mb-4">
+                        <label class="block text-gray-300 text-sm font-bold mb-2">Select Tag</label>
+                        <select id="tag-select" class="w-full bg-gray-700 text-white p-3 rounded-lg border border-gray-600 focus:ring-2 focus:ring-blue-500 focus:outline-none" required>
+                            <option value="">Choose a tag...</option>
+                        </select>
+                    </div>
+                    <div class="flex items-center justify-between">
+                        <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded-lg transition duration-300">
+                            Add Tag
+                        </button>
+                        <button type="button" onclick="closeModal()" class="text-gray-400 hover:text-white">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            `);
+            document.body.appendChild(modal);
+
+            // Load tags into the select
+            loadTagsIntoSelect();
+
+            document.getElementById('add-tag-form').addEventListener('submit', (e) => handleAddTag(e, documentId));
+        }
+
+        // Load tags into select dropdown
+        async function loadTagsIntoSelect() {
+            try {
+                const response = await fetch('/api/tags');
+                const tags = await response.json();
+
+                const select = document.getElementById('tag-select');
+                select.innerHTML = '<option value="">Choose a tag...</option>' +
+                    tags.map(tag => `<option value="${tag.id}">${tag.name}</option>`).join('');
+            } catch (error) {
+                console.error('Failed to load tags:', error);
+            }
+        }
+
+        // Handle adding tag to document
+        async function handleAddTag(e, documentId) {
+            e.preventDefault();
+            const tagId = document.getElementById('tag-select').value;
+
+            if (!tagId) {
+                alert('Please select a tag');
+                return;
+            }
+
+            try {
+                const response = await fetch(`/api/documents/${documentId}/tags`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tag_id: parseInt(tagId) })
+                });
+                const result = await response.json();
+
+                if (result.success) {
+                    closeModal();
+                    await loadDocuments(); // Refresh documents to show new tag assignment
+                    alert('Tag added to document successfully!');
+                } else {
+                    alert(result.error || 'Failed to add tag to document');
+                }
+            } catch (error) {
+                alert('Failed to add tag to document. Please try again.');
+            }
+        }
+
+        // Show document details
+        function showDocumentDetails(documentId) {
+            // This would show detailed information about a document
+            // For now, just show a simple alert
+            alert(`Document details for ID: ${documentId}\n(This feature can be expanded to show more detailed information)`);
+        }
+
+        // Download document
+        function downloadDocument(filename) {
+            window.open(`/download/${encodeURIComponent(filename)}`, '_blank');
+        }
+
+        // Create modal helper function
+        function createModal(title, content) {
+            const modal = document.createElement('div');
+            modal.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            modal.innerHTML = `
+                <div class="bg-gray-800 p-8 rounded-2xl shadow-xl max-w-md w-full mx-4">
+                    <h2 class="text-2xl font-bold text-white mb-6">${title}</h2>
+                    ${content}
+                </div>
+            `;
+
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) closeModal();
+            });
+            return modal;
+        }
+
+        // Close modal helper function
+        function closeModal() {
+            const modal = document.querySelector('.fixed.inset-0.bg-black.bg-opacity-50');
+            if (modal) modal.remove();
+        }
+
+        // Make functions globally available for onclick handlers
+        window.searchConcept = searchConcept;
+        window.summarizePaper = summarizePaper;
+        window.showLibrary = showLibrary;
+        window.showDocumentOrganization = showDocumentOrganization;
+        window.showCreateCategoryModal = showCreateCategoryModal;
+        window.showCreateTagModal = showCreateTagModal;
+        window.searchDocuments = searchDocuments;
+        window.closeModal = closeModal;
+        window.showDocumentDetails = showDocumentDetails;
+        window.downloadDocument = downloadDocument;
+        window.addToCategory = addToCategory;
+        window.addTag = addTag;
+
     </script>
 </body>
 </html>

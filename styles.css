@@ -1,0 +1,21 @@
+body { font-family: 'Inter', sans-serif; }
+.scroll-container::-webkit-scrollbar { width: 4px; }
+.scroll-container::-webkit-scrollbar-thumb { background-color: #4a5568; border-radius: 20px; }
+.analysis-card {
+    background-color: rgba(55, 65, 81, 0.5); /* bg-gray-700/50 */
+    border-radius: 0.5rem;
+    padding: 1rem;
+    border: 1px solid rgb(75 85 99);
+}
+details > summary {
+    list-style: none;
+    cursor: pointer;
+}
+details > summary::-webkit-details-marker {
+    display: none;
+}
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+.pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
